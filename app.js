@@ -508,17 +508,11 @@ function statusBadge(status) {
 // ============================================================
 // EARNINGS CHART (Chart.js)
 // ============================================================
-function renderEarningsChart(period) {
-  if (period) state.chartPeriod = period;
+function renderEarningsChart() {
   const canvas = document.getElementById('earningsChart');
   if (!canvas) return;
 
-  // Update tab styles
-  document.querySelectorAll('.chart-tab').forEach(t => {
-    t.classList.toggle('active', t.dataset.period === state.chartPeriod);
-  });
-
-  const { labels, data } = getChartData(state.chartPeriod);
+  const { labels, data } = getClientChartData();
 
   if (state.chartInstance) state.chartInstance.destroy();
   state.chartInstance = new Chart(canvas, {
@@ -555,41 +549,27 @@ function renderEarningsChart(period) {
   });
 }
 
-function getChartData(period) {
-  if (period === 'weekly') {
-    return {
-      labels: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'],
-      data: [1200,2400,800,3200,1800,600,2100],
-    };
+function getClientChartData() {
+  const clientEarnings = state.clients.map(c => {
+    const earnings = state.tasks
+      .filter(t => t.ClientId === c.ID)
+      .reduce((sum, t) => sum + (parseFloat(t.Amount) || 0), 0);
+    return { name: c.Name, earnings };
+  });
+
+  const activeClients = clientEarnings
+    .filter(c => c.earnings > 0)
+    .sort((a, b) => b.earnings - a.earnings)
+    .slice(0, 10);
+
+  if (activeClients.length === 0) {
+     return { labels: ['No Data'], data: [0] };
   }
-  if (period === 'monthly') {
-    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    const now = new Date();
-    const labels = [];
-    const data = [];
-    for (let i = 5; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      labels.push(months[d.getMonth()]);
-      const m = d.getMonth(), y = d.getFullYear();
-      const total = state.tasks.filter(t => {
-        const td = new Date(t.AssignedDate);
-        return td.getMonth() === m && td.getFullYear() === y;
-      }).reduce((s, t) => s + (parseFloat(t.Amount)||0), 0);
-      data.push(total || Math.floor(Math.random() * 8000 + 2000));
-    }
-    return { labels, data };
-  }
-  // yearly
-  const now = new Date();
-  const labels = [], data = [];
-  for (let i = 4; i >= 0; i--) {
-    const y = now.getFullYear() - i;
-    labels.push(String(y));
-    const total = state.tasks.filter(t => new Date(t.AssignedDate).getFullYear() === y)
-      .reduce((s, t) => s + (parseFloat(t.Amount)||0), 0);
-    data.push(total || Math.floor(Math.random() * 100000 + 50000));
-  }
-  return { labels, data };
+
+  return {
+    labels: activeClients.map(c => c.name),
+    data: activeClients.map(c => c.earnings)
+  };
 }
 
 // ============================================================
