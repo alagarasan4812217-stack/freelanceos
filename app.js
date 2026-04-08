@@ -46,6 +46,12 @@ function generateId(prefix) {
 function formatDate(dateStr) {
   if (!dateStr) return '—';
   try {
+    // If the input is YYYY-MM-DD, parse it manually to avoid timezone shift
+    if (typeof dateStr === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateStr.trim())) {
+      const [y, m, d] = dateStr.trim().split('-');
+      const dateObj = new Date(y, m - 1, d);
+      return dateObj.toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
+    }
     const d = new Date(dateStr);
     if (isNaN(d)) return dateStr;
     return d.toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
@@ -612,6 +618,17 @@ function renderClientsStats() {
 
 function setText(id, val) { const el = document.getElementById(id); if (el) el.textContent = val; }
 
+let clientsSortDesc = true;
+function sortClientsByDate() {
+  clientsSortDesc = !clientsSortDesc;
+  state.clients.sort((a, b) => {
+    const dA = new Date(a.JoinedDate || 0);
+    const dB = new Date(b.JoinedDate || 0);
+    return clientsSortDesc ? dB - dA : dA - dB;
+  });
+  renderClientsTable();
+}
+
 function renderClientsTable() {
   const tbody = document.getElementById('clients-tbody');
   if (!tbody) return;
@@ -734,6 +751,18 @@ function renderTasksStats() {
   setText('tk-stat-inprogress', inProgress);
   setText('tk-stat-completed',  completed);
   setText('tk-stat-overdue',    overdue);
+}
+
+let tasksSortDesc = true;
+function sortTasksByDate() {
+  tasksSortDesc = !tasksSortDesc;
+  state.tasks.sort((a, b) => {
+    const dA = new Date(a.AssignedDate || 0);
+    const dB = new Date(b.AssignedDate || 0);
+    return tasksSortDesc ? dB - dA : dA - dB;
+  });
+  renderTasksTable();
+  if (state.currentPage === 'dashboard') renderDashboardTasksTable();
 }
 
 function renderTasksTable() {
@@ -1025,7 +1054,8 @@ function buildTaskModalHtml() {
   const clientOptions = state.clients.map(c =>
     `<option value="${c.ID}">${escHtml(c.Name)}</option>`
   ).join('');
-  const today = new Date().toISOString().split('T')[0];
+  const d = new Date();
+  const today = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
   return `
     <h2 class="modal-title">Add New Task</h2>
     <div class="form-group">
@@ -1166,11 +1196,14 @@ async function submitClient(existingId) {
     } else {
       // ---- Add new client (optimistic: add to UI first, then save to sheet) ----
       const tempId = generateId('CLT');
+      const dDate = new Date();
+      const localDateIso = `${dDate.getFullYear()}-${String(dDate.getMonth()+1).padStart(2,'0')}-${String(dDate.getDate()).padStart(2,'0')}`;
+      
       const newClient = {
         ID: tempId,
         Name: name, Email: email, Location: location,
         Type: type, Status: status,
-        JoinedDate: new Date().toISOString().split('T')[0],
+        JoinedDate: localDateIso,
         TotalBilled: 0, ActiveTasks: 0,
         LogoUrl: displayLogoUrl,  // local dataURL or Drive URL — for immediate display
         CreatedAt: new Date().toISOString(),
@@ -1249,6 +1282,9 @@ async function submitTask() {
   btn.innerHTML = `<span class="spinner"></span> Creating...`;
 
   const tempId = generateId('TSK');
+  const dDate = new Date();
+  const localDateIso = `${dDate.getFullYear()}-${String(dDate.getMonth()+1).padStart(2,'0')}-${String(dDate.getDate()).padStart(2,'0')}`;
+  
   const newTask = {
     ID: tempId,
     ClientId: clientId,
@@ -1258,7 +1294,7 @@ async function submitTask() {
     Amount: amount,
     Status: 'Pending',
     PaymentStatus: 'Pending',
-    AssignedDate: new Date().toISOString().split('T')[0],
+    AssignedDate: localDateIso,
     DueDate: dueDate,
     CreatedAt: new Date().toISOString(),
   };
@@ -1409,6 +1445,25 @@ async function init() {
 
   // Check demo mode
   checkDemoMode();
+
+  // Dynamic Date Range 
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), 1);
+  const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  const m1 = start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const m2 = end.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const drBtn = document.getElementById('date-range-btn');
+  if (drBtn) {
+    drBtn.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+        <line x1="16" y1="2" x2="16" y2="6" />
+        <line x1="8" y1="2" x2="8" y2="6" />
+        <line x1="3" y1="10" x2="21" y2="10" />
+      </svg>
+      ${m1} – ${m2}
+    `;
+  }
 
   // Keyboard shortcuts
   document.addEventListener('keydown', e => {
