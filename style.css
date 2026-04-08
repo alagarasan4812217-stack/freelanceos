@@ -587,6 +587,15 @@ html, body {
 .inline-select.pay-received  { background-color: var(--green-bg); color: var(--green); }
 .inline-select.pay-overdue   { background-color: var(--red-bg);   color: var(--red); }
 
+.inline-select.type-design      { background-color: var(--purple-bg); color: var(--purple); }
+.inline-select.type-dev         { background-color: var(--accent-glow); color: var(--accent); }
+.inline-select.type-seo         { background-color: var(--green-bg); color: var(--green); }
+.inline-select.type-branding    { background-color: var(--amber-bg); color: var(--amber); }
+.inline-select.type-maintenance { background-color: var(--gray-bg); color: var(--text-secondary); }
+.inline-select.type-consulting  { background-color: var(--purple-bg); color: var(--purple); }
+.inline-select.type-copy        { background-color: var(--gray-bg); color: var(--text-secondary); }
+.inline-select.type-marketing   { background-color: var(--amber-bg); color: var(--amber); }
+
 /* ---- Task Type Tag ---- */
 .type-tag {
   display: inline-flex;

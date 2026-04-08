@@ -54,7 +54,7 @@ function formatDate(dateStr) {
 
 function formatCurrency(val) {
   const n = parseFloat(val) || 0;
-  return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  return '₹' + n.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 }
 
 function getInitials(name) {
@@ -538,12 +538,12 @@ function renderEarningsChart(period) {
         borderColor: '#30363d',
         borderWidth: 1,
         padding: 10,
-        callbacks: { label: ctx => ' $' + ctx.raw.toLocaleString() }
+        callbacks: { label: ctx => ' ₹' + ctx.raw.toLocaleString('en-IN') }
       }},
       scales: {
         x: { grid: { color: 'transparent' }, ticks: { color: '#6e7681', font: { size: 11 } } },
         y: { grid: { color: '#21293a', borderDash: [3,3] }, ticks: { color: '#6e7681', font: { size: 11 },
-          callback: v => v >= 1000 ? '$' + v/1000 + 'k' : '$' + v } }
+          callback: v => v >= 1000 ? '₹' + v/1000 + 'k' : '₹' + v } }
       },
     },
   });
@@ -767,7 +767,7 @@ function renderTasksTable() {
       </td>
       <td class="text-muted">${formatDate(t.AssignedDate)}</td>
       <td>
-        <select class="inline-select" onchange="updateTaskType(this, '${t.ID}')">
+        <select class="inline-select ${typeSelectClass(t.TaskType)}" onchange="updateTaskType(this, '${t.ID}')">
           ${['Design','Development','SEO','Branding','Maintenance','Consulting','Copywriting','Marketing'].map(tp =>
             `<option value="${tp}" ${t.TaskType===tp?'selected':''}>${tp}</option>`
           ).join('')}
@@ -814,6 +814,20 @@ function paySelectClass(status) {
   return status === 'Received' ? 'pay-received' : status === 'Overdue' ? 'pay-overdue' : 'pay-pending';
 }
 
+function typeSelectClass(type) {
+  const map = {
+    'Design': 'type-design',
+    'Development': 'type-dev',
+    'SEO': 'type-seo',
+    'Branding': 'type-branding',
+    'Maintenance': 'type-maintenance',
+    'Consulting': 'type-consulting',
+    'Copywriting': 'type-copy',
+    'Marketing': 'type-marketing'
+  };
+  return map[type] || 'type-design';
+}
+
 async function updateTaskStatus(selectEl, taskId) {
   const newStatus = selectEl.value;
   selectEl.className = `inline-select ${statusSelectClass(newStatus)}`;
@@ -840,6 +854,7 @@ async function updatePaymentStatus(selectEl, taskId) {
 
 async function updateTaskType(selectEl, taskId) {
   const newType = selectEl.value;
+  selectEl.className = `inline-select ${typeSelectClass(newType)}`;
   const idx = state.tasks.findIndex(t => t.ID === taskId);
   if (idx !== -1) state.tasks[idx].TaskType = newType;
 }
@@ -1035,7 +1050,7 @@ function buildTaskModalHtml() {
         </select>
       </div>
       <div class="form-group">
-        <label class="form-label">Amount ($)</label>
+        <label class="form-label">Amount (₹)</label>
         <input id="tf-amount" class="form-input" type="number" min="0" step="0.01" placeholder="0.00" value="0.00">
       </div>
     </div>
