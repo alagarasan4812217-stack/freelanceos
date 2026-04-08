@@ -17,18 +17,11 @@ const DRIVE_FOLDER_ID = '1EiGnQVkiGIAmWrnJx_l-M8jwFVEULMgp'; // Optional: for lo
 const CLIENTS_SHEET = 'Clients';
 const TASKS_SHEET = 'Tasks';
 
-// ---- CORS HEADERS ----
-function setCORSHeaders(output) {
-  return output
-    .addHeader('Access-Control-Allow-Origin', '*')
-    .addHeader('Access-Control-Allow-Methods', 'GET, POST')
-    .addHeader('Access-Control-Allow-Headers', 'Content-Type');
-}
-
 // ---- MAIN HANDLERS ----
 function doGet(e) {
   try {
-    const action = e.parameter.action;
+    const action   = e.parameter.action;
+    const callback = e.parameter.callback; // present when called via JSONP
     let result;
 
     if (action === 'getClients') {
@@ -55,15 +48,31 @@ function doGet(e) {
       result = { error: 'Unknown action: ' + action };
     }
 
-    const output = ContentService
-      .createTextOutput(JSON.stringify(result))
+    const json = JSON.stringify(result);
+
+    // ---- JSONP path (bypasses all CORS restrictions) ----
+    if (callback) {
+      return ContentService
+        .createTextOutput(callback + '(' + json + ')')
+        .setMimeType(ContentService.MimeType.JAVASCRIPT);
+    }
+
+    // ---- Regular JSON path (with Apps Script's default CORS headers) ----
+    return ContentService
+      .createTextOutput(json)
       .setMimeType(ContentService.MimeType.JSON);
-    return setCORSHeaders(output);
+
   } catch (err) {
-    const output = ContentService
-      .createTextOutput(JSON.stringify({ error: err.message }))
+    const json = JSON.stringify({ error: err.message });
+    const callback = (e && e.parameter) ? e.parameter.callback : null;
+    if (callback) {
+      return ContentService
+        .createTextOutput(callback + '(' + json + ')')
+        .setMimeType(ContentService.MimeType.JAVASCRIPT);
+    }
+    return ContentService
+      .createTextOutput(json)
       .setMimeType(ContentService.MimeType.JSON);
-    return setCORSHeaders(output);
   }
 }
 
@@ -106,15 +115,13 @@ function doPost(e) {
         result = { error: 'Unknown action: ' + action };
     }
 
-    const output = ContentService
+    return ContentService
       .createTextOutput(JSON.stringify(result))
       .setMimeType(ContentService.MimeType.JSON);
-    return setCORSHeaders(output);
   } catch (err) {
-    const output = ContentService
+    return ContentService
       .createTextOutput(JSON.stringify({ error: err.message, stack: err.stack }))
       .setMimeType(ContentService.MimeType.JSON);
-    return setCORSHeaders(output);
   }
 }
 

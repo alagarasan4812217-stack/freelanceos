@@ -137,6 +137,49 @@ function showContextMenu(e, items) {
 // NOTE: Google Apps Script CORS fix —
 // Using 'text/plain' ContentType avoids a browser CORS preflight (OPTIONS)
 // request that GAS cannot handle. JSON is still in the body.
+// ============================================================
+// JSONP LOADER (bypasses ALL CORS restrictions for GET requests)
+// ============================================================
+// Google Apps Script GET endpoints require CORS headers which browsers
+// sometimes block. JSONP loads the response as a <script> tag — no CORS
+// check is performed, so the response is always readable.
+function loadViaJsonp(baseUrl, timeoutMs = 15000) {
+  return new Promise((resolve, reject) => {
+    // Unique callback name so parallel calls don't collide
+    const cbName = '__gasCb_' + Date.now() + '_' + Math.floor(Math.random() * 99999);
+    let script = null;
+
+    const timer = setTimeout(() => {
+      cleanup();
+      reject(new Error('JSONP request timed out after 15 s'));
+    }, timeoutMs);
+
+    function cleanup() {
+      clearTimeout(timer);
+      try { delete window[cbName]; } catch (_) {}
+      if (script && script.parentNode) script.parentNode.removeChild(script);
+    }
+
+    // Apps Script will call this function with the JSON payload
+    window[cbName] = function (data) {
+      cleanup();
+      resolve(data);
+    };
+
+    script = document.createElement('script');
+    script.onerror = function () {
+      cleanup();
+      reject(new Error('JSONP script failed to load — check Apps Script URL'));
+    };
+    // Append &callback= so Apps Script wraps the response
+    script.src = baseUrl + '&callback=' + cbName;
+    document.head.appendChild(script);
+  });
+}
+
+// ============================================================
+// API LAYER
+// ============================================================
 async function apiCall(method, payload) {
   if (CONFIG.DEMO_MODE || !CONFIG.APPS_SCRIPT_URL) {
     return simulateApi(method, payload);
@@ -146,9 +189,18 @@ async function apiCall(method, payload) {
     if (method === 'GET') {
       const params = new URLSearchParams({ action: payload.action });
       const url = `${CONFIG.APPS_SCRIPT_URL}?${params.toString()}`;
-      const res = await fetch(url, { method: 'GET', redirect: 'follow' });
-      if (!res.ok) throw new Error(`Server returned HTTP ${res.status}`);
-      result = await res.json();
+
+      // Try JSONP first — it bypasses CORS entirely for GET requests.
+      // Falls back to regular fetch if JSONP fails (e.g. script.src error).
+      try {
+        result = await loadViaJsonp(url);
+        console.log('[FreelanceOS] JSONP load succeeded for action:', payload.action);
+      } catch (jsonpErr) {
+        console.warn('[FreelanceOS] JSONP failed, trying fetch fallback:', jsonpErr.message);
+        const res = await fetch(url, { method: 'GET', redirect: 'follow' });
+        if (!res.ok) throw new Error(`Server returned HTTP ${res.status}`);
+        result = await res.json();
+      }
     } else {
       // CRITICAL: Use mode:'no-cors' to bypass the CORS redirect issue.
       // Apps Script redirects POST from script.google.com → script.googleusercontent.com,
@@ -166,8 +218,8 @@ async function apiCall(method, payload) {
       result = { success: true };
     }
 
-    // *** KEY FIX: Apps Script returns { error: "..." } with HTTP 200 —
-    // we must detect and throw these so callers can surface them to the user.
+    // Apps Script sometimes returns { error: "..." } with HTTP 200 —
+    // detect and throw so callers can surface the error to the user.
     if (result && result.error) {
       throw new Error(`Apps Script error: ${result.error}`);
     }
