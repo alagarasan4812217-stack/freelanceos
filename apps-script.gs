@@ -96,6 +96,9 @@ function doPost(e) {
       case 'updateClientStatus':
         result = updateClientStatus(data.clientId, data.status);
         break;
+      case 'updateClient':
+        result = updateClient(data.client);
+        break;
       case 'uploadImage':
         result = uploadImageToDrive(data.base64, data.filename, data.mimeType);
         break;
@@ -194,6 +197,33 @@ function updateClientStatus(clientId, status) {
   for (let i = 1; i < data.length; i++) {
     if (data[i][0] === clientId) {
       sheet.getRange(i + 1, statusCol).setValue(status);
+      return { success: true };
+    }
+  }
+  return { error: 'Client not found' };
+}
+
+function updateClient(client) {
+  if (!client || !client.id) return { error: 'Client ID is required' };
+  const sheet = getSheet(CLIENTS_SHEET);
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === String(client.id)) {
+      var colMap = {
+        'Name':     client.name,
+        'Email':    client.email,
+        'Location': client.location,
+        'Type':     client.type,
+        'Status':   client.status,
+        'LogoUrl':  client.logoUrl,
+      };
+      for (var colIdx = 0; colIdx < headers.length; colIdx++) {
+        var h = headers[colIdx];
+        if (colMap.hasOwnProperty(h) && colMap[h] !== undefined) {
+          sheet.getRange(i + 1, colIdx + 1).setValue(colMap[h]);
+        }
+      }
       return { success: true };
     }
   }

@@ -8,7 +8,7 @@
 
 const CONFIG = {
   // Paste your Google Apps Script Web App URL here after deployment
-  APPS_SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbyucaW4QtpFWMLbBgdPwM0Bo-im6_gsvXMEaI55RifIXAUxdqlemvmZGq-G2negeI-G/exec',
+  APPS_SCRIPT_URL: 'https://script.google.com/macros/s/AKfycby3xnFaQRUrvH4o80ncKlYIKFkcran-jUCpwYVe7jAW26w9mR00lL1EPNm0QDhbtUI/exec',
 
   // Set to false once you've configured the APPS_SCRIPT_URL above
   DEMO_MODE: false,

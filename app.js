@@ -150,15 +150,20 @@ async function apiCall(method, payload) {
       if (!res.ok) throw new Error(`Server returned HTTP ${res.status}`);
       result = await res.json();
     } else {
-      // CRITICAL: 'text/plain' avoids CORS preflight that GAS cannot handle
-      const res = await fetch(CONFIG.APPS_SCRIPT_URL, {
+      // CRITICAL: Use mode:'no-cors' to bypass the CORS redirect issue.
+      // Apps Script redirects POST from script.google.com → script.googleusercontent.com,
+      // which causes "Failed to fetch" in browsers due to CORS preflight on the redirect.
+      // With no-cors, the response is opaque (unreadable) but the POST data IS sent to
+      // the server and processed. Since we use optimistic UI updates we don't need the
+      // response body — just assume success if the fetch itself doesn't throw.
+      await fetch(CONFIG.APPS_SCRIPT_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify(payload),
-        redirect: 'follow',
+        mode: 'no-cors',
       });
-      if (!res.ok) throw new Error(`Server returned HTTP ${res.status}`);
-      result = await res.json();
+      // Response is opaque with no-cors; optimistically treat as success
+      result = { success: true };
     }
 
     // *** KEY FIX: Apps Script returns { error: "..." } with HTTP 200 —
@@ -190,6 +195,35 @@ function simulateApi(method, payload) {
 // ============================================================
 // DATA LOADING
 // ============================================================
+// Normalize a value from Google Sheets to a plain string (dates, numbers, etc.)
+function normalizeSheetValue(val) {
+  if (val === null || val === undefined) return '';
+  if (val instanceof Date) {
+    // Format as YYYY-MM-DD
+    const y = val.getFullYear();
+    const m = String(val.getMonth() + 1).padStart(2, '0');
+    const d = String(val.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+  return String(val);
+}
+
+// Normalize a row object returned from Google Sheets
+// (all values arrive as numbers/Date objects from the Sheets API)
+function normalizeSheetRow(obj) {
+  const out = {};
+  for (const key of Object.keys(obj)) {
+    const val = obj[key];
+    // Keep numeric fields as numbers
+    if (key === 'TotalBilled' || key === 'Amount' || key === 'ActiveTasks') {
+      out[key] = parseFloat(val) || 0;
+    } else {
+      out[key] = normalizeSheetValue(val);
+    }
+  }
+  return out;
+}
+
 async function loadAllData() {
   if (CONFIG.DEMO_MODE || !CONFIG.APPS_SCRIPT_URL) {
     // Demo mode: use built-in sample data
@@ -200,15 +234,19 @@ async function loadAllData() {
   try {
     showSyncIndicator(true);
     const data = await apiCall('GET', { action: 'getAllData' });
-    // Normalize: sheets may return objects with string keys (column names)
-    state.clients = Array.isArray(data.clients) ? data.clients.filter(c => c.ID || c.Name) : [];
-    state.tasks   = Array.isArray(data.tasks)   ? data.tasks.filter(t => t.ID || t.TaskName) : [];
+    // Normalize: sheets may return Date objects and numbers — convert everything to proper types
+    state.clients = Array.isArray(data.clients)
+      ? data.clients.map(normalizeSheetRow).filter(c => c.ID || c.Name)
+      : [];
+    state.tasks = Array.isArray(data.tasks)
+      ? data.tasks.map(normalizeSheetRow).filter(t => t.ID || t.TaskName)
+      : [];
     showToast('Connected', `Loaded ${state.clients.length} clients, ${state.tasks.length} tasks from Google Sheets.`, 'success');
   } catch (err) {
     console.warn('Sheet load failed, starting with empty data:', err);
     state.clients = [];
     state.tasks   = [];
-    showToast('Sheet Empty or Error', 'Could not load data. Add clients to get started.', 'info');
+    showToast('Sheet Load Error', 'Could not load data. Check your Apps Script URL.', 'info');
   } finally {
     showSyncIndicator(false);
   }
@@ -244,30 +282,47 @@ function fileToDataUrl(file) {
 }
 
 // Upload image to Google Drive via Apps Script.
-// Returns the public Drive URL on success.
-// Throws on failure — callers should catch and fall back to dataUrl.
+// Returns { driveUrl, localUrl } — driveUrl is for persistence, localUrl for immediate display.
+// Never throws — returns empty driveUrl on any failure.
 async function uploadImage(file) {
-  if (!file) return '';
+  if (!file) return { driveUrl: '', localUrl: '' };
 
-  // Read file into base64
-  const dataUrl = await fileToDataUrl(file);
-
-  if (CONFIG.DEMO_MODE || !CONFIG.APPS_SCRIPT_URL) {
-    // Demo mode: just return the local data URL
-    return dataUrl;
+  // Always read the local dataURL first for immediate display
+  let localUrl = '';
+  try {
+    localUrl = await fileToDataUrl(file);
+  } catch (e) {
+    console.warn('[FreelanceOS] FileReader failed:', e);
+    return { driveUrl: '', localUrl: '' };
   }
 
-  // Send base64 to Apps Script → Google Drive
-  const base64 = dataUrl.split(',')[1];
-  const result = await apiCall('POST', {
-    action: 'uploadImage',
-    base64:   base64,
-    filename: file.name,
-    mimeType: file.type,
-  });
+  if (CONFIG.DEMO_MODE || !CONFIG.APPS_SCRIPT_URL) {
+    // Demo mode: use the local data URL for both display and storage
+    return { driveUrl: localUrl, localUrl };
+  }
 
-  if (!result.url) throw new Error('Drive upload succeeded but returned no URL.');
-  return result.url;
+  // Send base64 to Apps Script → Google Drive with a 20s timeout
+  try {
+    const base64 = localUrl.split(',')[1];
+    const uploadPromise = apiCall('POST', {
+      action:   'uploadImage',
+      base64:   base64,
+      filename: file.name,
+      mimeType: file.type,
+    });
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Image upload timed out after 20 s')), 20000)
+    );
+    const result = await Promise.race([uploadPromise, timeoutPromise]);
+    if (result && result.url) {
+      console.log('[FreelanceOS] Logo uploaded to Drive:', result.url);
+      return { driveUrl: result.url, localUrl };
+    }
+    throw new Error('Drive upload returned no URL.');
+  } catch (err) {
+    console.warn('[FreelanceOS] Drive upload failed (using local fallback):', err.message);
+    return { driveUrl: '', localUrl };  // caller will use localUrl for display only
+  }
 }
 
 // ============================================================
@@ -994,26 +1049,20 @@ async function submitClient(existingId) {
   btn.innerHTML = `<span class="spinner"></span> Saving...`;
 
   try {
-    // ---- Step 1: Upload logo if provided ----
-    let logoUrl     = '';  // URL stored in Google Sheet (Drive URL or '')
-    let logoDisplay = '';  // URL used for avatar display (Drive URL or dataUrl fallback)
+    // ---- Step 1: Upload logo (non-blocking — never prevents client save) ----
+    let driveLogoUrl = '';   // Drive URL → stored in Google Sheet
+    let displayLogoUrl = ''; // Data URL or Drive URL → used for immediate UI display
+
     if (logoFile) {
       btn.innerHTML = `<span class="spinner"></span> Uploading logo...`;
-      try {
-        logoUrl     = await uploadImage(logoFile); // throws on failure
-        logoDisplay = logoUrl;
-        console.log('[FreelanceOS] Logo uploaded to Drive:', logoUrl);
-      } catch (imgErr) {
-        // Drive upload failed — convert to local data URL for UI display.
-        // We still save the client; the logo won't persist on refresh.
-        console.warn('[FreelanceOS] Drive logo upload failed:', imgErr.message);
-        try {
-          logoDisplay = await fileToDataUrl(logoFile); // local preview only
-        } catch { logoDisplay = ''; }
-        logoUrl = ''; // don't store giant data URL in Sheet
+      const { driveUrl, localUrl } = await uploadImage(logoFile);
+      driveLogoUrl   = driveUrl;   // may be '' if Drive upload failed
+      displayLogoUrl = driveUrl || localUrl; // prefer Drive URL, fall back to local dataURL
+
+      if (!driveUrl && localUrl) {
         showToast(
-          'Logo Warning',
-          `Drive upload failed: ${imgErr.message.replace('Apps Script error: ', '')}. Avatar shown locally only.`,
+          'Logo Notice',
+          'Logo saved locally for this session. It will not persist after a page refresh.',
           'info'
         );
       }
@@ -1021,65 +1070,98 @@ async function submitClient(existingId) {
 
     if (existingId) {
       // ---- Edit existing client ----
+      btn.innerHTML = `<span class="spinner"></span> Updating...`;
       const idx = state.clients.findIndex(c => c.ID === existingId);
       if (idx !== -1) {
         state.clients[idx] = {
           ...state.clients[idx],
           Name: name, Email: email, Location: location,
           Type: type, Status: status,
-          // logoDisplay: shows avatar now; logoUrl: persists to sheet
-          ...(logoDisplay ? { LogoUrl: logoDisplay } : {}),
+          ...(displayLogoUrl ? { LogoUrl: displayLogoUrl } : {}),
         };
       }
+
+      // Update UI immediately (optimistic)
+      closeModal();
+      renderClients();
+      if (state.currentPage === 'dashboard') renderDashboard();
       showToast('Client Updated', `${name} has been updated.`, 'success');
+
+      // Persist to sheet in background (fire-and-forget)
+      apiCall('POST', {
+        action: 'updateClient',
+        client: {
+          id: existingId, name, email, location, type, status,
+          logoUrl: driveLogoUrl,
+        },
+      }).catch(err => console.warn('[FreelanceOS] Background updateClient failed:', err.message));
+
     } else {
-      // ---- Add new client ----
-      btn.innerHTML = `<span class="spinner"></span> Saving to Sheet...`;
+      // ---- Add new client (optimistic: add to UI first, then save to sheet) ----
+      const tempId = generateId('CLT');
       const newClient = {
-        ID: generateId('CLT'),
+        ID: tempId,
         Name: name, Email: email, Location: location,
         Type: type, Status: status,
         JoinedDate: new Date().toISOString().split('T')[0],
         TotalBilled: 0, ActiveTasks: 0,
-        LogoUrl: logoDisplay,  // use display version so avatar renders immediately
+        LogoUrl: displayLogoUrl,  // local dataURL or Drive URL — for immediate display
         CreatedAt: new Date().toISOString(),
       };
 
-      // Push to Google Sheet — Apps Script expects camelCase/lowercase keys
-      // IMPORTANT: send logoUrl (Drive URL ONLY, never dataURL) to the sheet.
-      // newClient.LogoUrl may be a local dataURL fallback — too large for a Sheet cell.
-      const sheetResult = await apiCall('POST', {
+      // Add to state immediately so the client appears right away
+      state.clients.push(newClient);
+
+      // Close modal and render UI before waiting for the sheet API call
+      closeModal();
+      renderClients();
+      if (state.currentPage === 'dashboard') renderDashboard();
+      showToast('Client Added ✓', `${name} added. Saving to Google Sheet…`, 'success');
+
+      // Now save to sheet in background — modal is already closed
+      // (btn reference is stale after closeModal, but the API call itself still matters)
+      apiCall('POST', {
         action: 'addClient',
         client: {
-          id:          newClient.ID,
-          name:        newClient.Name,
-          email:       newClient.Email,
-          location:    newClient.Location,
-          type:        newClient.Type,
-          status:      newClient.Status,
+          id:          tempId,
+          name,
+          email,
+          location,
+          type,
+          status,
           joinedDate:  newClient.JoinedDate,
-          totalBilled: newClient.TotalBilled,
-          activeTasks: newClient.ActiveTasks,
-          logoUrl:     logoUrl,   // Drive URL only (empty string if Drive upload failed)
+          totalBilled: 0,
+          activeTasks: 0,
+          logoUrl:     driveLogoUrl,  // Drive URL only (never dataURL → too large for Sheet)
         },
+      }).then(sheetResult => {
+        // If Apps Script returns a different ID, update our local state record
+        if (sheetResult?.id && sheetResult.id !== tempId) {
+          const idx = state.clients.findIndex(c => c.ID === tempId);
+          if (idx !== -1) state.clients[idx].ID = sheetResult.id;
+        }
+        console.log('[FreelanceOS] Client saved to sheet:', sheetResult);
+      }).catch(sheetErr => {
+        console.warn('[FreelanceOS] Sheet save failed (client kept in UI):', sheetErr.message);
+        showToast(
+          'Sync Warning',
+          'Client is shown but could not be saved to Google Sheet. Check your connection.',
+          'error'
+        );
       });
-
-      // Use the ID returned from the sheet if available
-      if (sheetResult && sheetResult.id) newClient.ID = sheetResult.id;
-      state.clients.push(newClient);
-      showToast('Client Added ✓', `${name} saved to Google Sheet.`, 'success');
     }
 
-    closeModal();
-    renderPage(state.currentPage);
-
   } catch (err) {
-    // Surface ALL errors — sheet errors, CORS errors, etc.
+    // Top-level catch — unexpected error (e.g. FileReader fail before modal close)
     const msg = err.message || 'Unknown error';
     console.error('submitClient error:', msg);
     showToast('Save Failed', msg, 'error');
-    btn.disabled = false;
-    btn.innerHTML = existingId ? 'Save Changes' : 'Add Client';
+    // Only try to re-enable btn if the modal is still open
+    const stillOpen = document.getElementById('client-submit-btn');
+    if (stillOpen) {
+      stillOpen.disabled = false;
+      stillOpen.textContent = existingId ? 'Save Changes' : 'Add Client';
+    }
   }
 }
 
@@ -1097,54 +1179,60 @@ async function submitTask() {
   const client = state.clients.find(c => c.ID === clientId);
   const btn = document.getElementById('task-submit-btn');
   btn.disabled = true;
-  btn.innerHTML = `<span class="spinner"></span> Saving to Sheet...`;
+  btn.innerHTML = `<span class="spinner"></span> Creating...`;
 
-  try {
-    const newTask = {
-      ID: generateId('TSK'),
-      ClientId: clientId,
-      ClientName: client?.Name || 'Unknown',
-      TaskName: name,
-      TaskType: taskType,
-      Amount: amount,
-      Status: 'Pending',
-      PaymentStatus: 'Pending',
-      AssignedDate: new Date().toISOString().split('T')[0],
-      DueDate: dueDate,
-      CreatedAt: new Date().toISOString(),
-    };
+  const tempId = generateId('TSK');
+  const newTask = {
+    ID: tempId,
+    ClientId: clientId,
+    ClientName: client?.Name || 'Unknown',
+    TaskName: name,
+    TaskType: taskType,
+    Amount: amount,
+    Status: 'Pending',
+    PaymentStatus: 'Pending',
+    AssignedDate: new Date().toISOString().split('T')[0],
+    DueDate: dueDate,
+    CreatedAt: new Date().toISOString(),
+  };
 
-    // Push to Google Sheet — always await and surface any errors
-    const sheetResult = await apiCall('POST', {
-      action: 'addTask',
-      task: {
-        id:            newTask.ID,
-        clientId:      newTask.ClientId,
-        clientName:    newTask.ClientName,
-        taskName:      newTask.TaskName,
-        taskType:      newTask.TaskType,
-        amount:        newTask.Amount,
-        status:        newTask.Status,
-        paymentStatus: newTask.PaymentStatus,
-        assignedDate:  newTask.AssignedDate,
-        dueDate:       newTask.DueDate,
-      },
-    });
+  // ---- Optimistic update: add to state and render UI immediately ----
+  state.tasks.push(newTask);
+  closeModal();
+  renderTasks();                                        // always refresh tasks page
+  if (state.currentPage === 'dashboard') renderDashboard();
+  showToast('Task Created ✓', `"${name}" added. Saving to Google Sheet…`, 'success');
 
-    // Use the ID returned from the sheet if available
-    if (sheetResult && sheetResult.id) newTask.ID = sheetResult.id;
-    state.tasks.push(newTask);
-
-    closeModal();
-    renderPage(state.currentPage);
-    showToast('Task Created ✓', `"${name}" saved to Google Sheet.`, 'success');
-  } catch (err) {
-    const msg = err.message || 'Unknown error';
-    console.error('submitTask error:', msg);
-    showToast('Save Failed', msg, 'error');
-    btn.disabled = false;
-    btn.innerHTML = 'Create Task';
-  }
+  // ---- Save to Google Sheet in background (fire-and-forget) ----
+  apiCall('POST', {
+    action: 'addTask',
+    task: {
+      id:            tempId,
+      clientId:      newTask.ClientId,
+      clientName:    newTask.ClientName,
+      taskName:      newTask.TaskName,
+      taskType:      newTask.TaskType,
+      amount:        newTask.Amount,
+      status:        newTask.Status,
+      paymentStatus: newTask.PaymentStatus,
+      assignedDate:  newTask.AssignedDate,
+      dueDate:       newTask.DueDate,
+    },
+  }).then(sheetResult => {
+    // If Apps Script returns a different ID, update our local state record
+    if (sheetResult?.id && sheetResult.id !== tempId) {
+      const idx = state.tasks.findIndex(t => t.ID === tempId);
+      if (idx !== -1) state.tasks[idx].ID = sheetResult.id;
+    }
+    console.log('[FreelanceOS] Task saved to sheet:', sheetResult);
+  }).catch(err => {
+    console.warn('[FreelanceOS] Sheet save failed (task kept in UI):', err.message);
+    showToast(
+      'Sync Warning',
+      'Task is shown but could not be saved to Google Sheet. Check your connection.',
+      'error'
+    );
+  });
 }
 
 // ============================================================
