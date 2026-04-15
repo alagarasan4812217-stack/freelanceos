@@ -14,8 +14,25 @@ const state = {
   chartInstance: null,
   chartPeriod: 'monthly',
   searchQuery: '',
+  selectedMonth: '',
   syncInProgress: false,
 };
+
+function getFilteredTasks() {
+  if (!state.selectedMonth) return state.tasks;
+  return state.tasks.filter(t => {
+    const d = t.AssignedDate || t.assignedDate || t.CreatedAt || '';
+    return d.startsWith(state.selectedMonth);
+  });
+}
+
+function getFilteredClients() {
+  if (!state.selectedMonth) return state.clients;
+  return state.clients.filter(c => {
+    const d = c.JoinedDate || c.joinedDate || c.CreatedAt || '';
+    return d.startsWith(state.selectedMonth);
+  });
+}
 
 // Demo seed data (used when DEMO_MODE is true or backend unreachable)
 const DEMO_CLIENTS = [
@@ -429,30 +446,20 @@ function renderPage(name) {
 function renderDashboard() {
   renderDashboardStats();
   renderDashboardTasksTable();
-  renderEarningsChart();
 }
 
 function renderDashboardStats() {
-  const now = new Date();
-  const thisMonth = now.getMonth();
-  const thisYear  = now.getFullYear();
+  const fTasks = getFilteredTasks();
+  const fClients = getFilteredClients();
+  const totalBilled = fTasks.filter(t => t.Status === 'Completed').reduce((s, t) => s + (parseFloat(t.Amount)||0), 0);
+  const received    = fTasks.filter(t => t.PaymentStatus === 'Received').reduce((s, t) => s + (parseFloat(t.Amount)||0), 0);
 
-  const totalClients = state.clients.length;
-  const newClientsThisMonth = state.clients.filter(c => {
-    const d = new Date(c.JoinedDate);
-    return d.getMonth() === thisMonth && d.getFullYear() === thisYear;
-  }).length;
-
-  const totalEarnings = state.tasks.reduce((s, t) => s + (parseFloat(t.Amount)||0), 0);
-  const thisMonthEarnings = state.tasks.filter(t => {
-    const d = new Date(t.AssignedDate);
-    return d.getMonth() === thisMonth && d.getFullYear() === thisYear;
-  }).reduce((s, t) => s + (parseFloat(t.Amount)||0), 0);
-
-  setCard('dash-total-clients',    totalClients,               '12%', true);
-  setCard('dash-new-clients',      newClientsThisMonth,        '2%',  true);
-  setCard('dash-month-earnings',   formatCurrency(thisMonthEarnings), '8%', true);
-  setCard('dash-total-earnings',   formatCurrency(totalEarnings),    '15%', true);
+  setText('dash-total-earnings', formatCurrency(totalBilled));
+  setText('dash-received',       formatCurrency(received));
+  setText('dash-pending-pay',    formatCurrency(totalBilled - received));
+  
+  const activeClientIds = new Set(fTasks.map(t => t.ClientId || t.clientId));
+  setText('dash-active-clients', activeClientIds.size > 0 ? activeClientIds.size : fClients.filter(c=>c.Status==='Active').length);
 }
 
 function setCard(id, value, badge, up) {
@@ -467,7 +474,8 @@ function renderDashboardTasksTable() {
   const tbody = document.getElementById('dash-tasks-tbody');
   if (!tbody) return;
 
-  const tasks = state.tasks.slice(0, 6);
+  const fTasks = getFilteredTasks();
+  const tasks = fTasks.slice(0, 6);
   if (!tasks.length) {
     tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state">No tasks yet.</div></td></tr>`;
     return;
@@ -505,72 +513,7 @@ function statusBadge(status) {
   return `<span class="badge ${cls}">${escHtml(status)}</span>`;
 }
 
-// ============================================================
-// EARNINGS CHART (Chart.js)
-// ============================================================
-function renderEarningsChart() {
-  const canvas = document.getElementById('earningsChart');
-  if (!canvas) return;
 
-  const { labels, data } = getClientChartData();
-
-  if (state.chartInstance) state.chartInstance.destroy();
-  state.chartInstance = new Chart(canvas, {
-    type: 'bar',
-    data: {
-      labels,
-      datasets: [{
-        data,
-        backgroundColor: data.map((_, i) => i === data.indexOf(Math.max(...data)) ? '#3fb950' : '#00d4ff'),
-        borderRadius: 5,
-        borderSkipped: false,
-        barThickness: 'flex',
-        maxBarThickness: 32,
-      }],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: { legend: { display: false }, tooltip: {
-        backgroundColor: '#1c2333',
-        titleColor: '#e6edf3',
-        bodyColor: '#8b949e',
-        borderColor: '#30363d',
-        borderWidth: 1,
-        padding: 10,
-        callbacks: { label: ctx => ' ₹' + ctx.raw.toLocaleString('en-IN') }
-      }},
-      scales: {
-        x: { grid: { color: 'transparent' }, ticks: { color: '#6e7681', font: { size: 11 } } },
-        y: { grid: { color: '#21293a', borderDash: [3,3] }, ticks: { color: '#6e7681', font: { size: 11 },
-          callback: v => v >= 1000 ? '₹' + v/1000 + 'k' : '₹' + v } }
-      },
-    },
-  });
-}
-
-function getClientChartData() {
-  const clientEarnings = state.clients.map(c => {
-    const earnings = state.tasks
-      .filter(t => t.ClientId === c.ID)
-      .reduce((sum, t) => sum + (parseFloat(t.Amount) || 0), 0);
-    return { name: c.Name, earnings };
-  });
-
-  const activeClients = clientEarnings
-    .filter(c => c.earnings > 0)
-    .sort((a, b) => b.earnings - a.earnings)
-    .slice(0, 10);
-
-  if (activeClients.length === 0) {
-     return { labels: ['No Data'], data: [0] };
-  }
-
-  return {
-    labels: activeClients.map(c => c.name),
-    data: activeClients.map(c => c.earnings)
-  };
-}
 
 // ============================================================
 // CLIENTS PAGE
@@ -581,11 +524,12 @@ function renderClients() {
 }
 
 function renderClientsStats() {
-  const total    = state.clients.length;
-  const active   = state.clients.filter(c => c.Status === 'Active').length;
-  const inactive = state.clients.filter(c => c.Status === 'Inactive').length;
+  const fClients = getFilteredClients();
+  const total    = fClients.length;
+  const active   = fClients.filter(c => c.Status === 'Active').length;
+  const inactive = fClients.filter(c => c.Status === 'Inactive').length;
   const now = new Date();
-  const newMonth = state.clients.filter(c => {
+  const newMonth = fClients.filter(c => {
     const d = new Date(c.JoinedDate);
     return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
   }).length;
@@ -613,8 +557,9 @@ function renderClientsTable() {
   const tbody = document.getElementById('clients-tbody');
   if (!tbody) return;
 
+  const fClients = getFilteredClients();
   const q = state.searchQuery.toLowerCase();
-  const clients = state.clients.filter(c =>
+  const clients = fClients.filter(c =>
     !q || c.Name?.toLowerCase().includes(q) || c.Email?.toLowerCase().includes(q) || c.Type?.toLowerCase().includes(q)
   );
 
@@ -626,8 +571,9 @@ function renderClientsTable() {
     return;
   }
 
+  const fTasks = getFilteredTasks();
   tbody.innerHTML = clients.map((c, i) => {
-    const taskCount = state.tasks.filter(t => t.ClientId === c.ID).length;
+    const taskCount = fTasks.filter(t => t.ClientId === c.ID).length;
     return `
     <tr>
       <td>
@@ -692,6 +638,8 @@ async function toggleClientStatus(clientId, newStatus) {
   if (idx === -1) return;
   state.clients[idx].Status = newStatus;
   renderClients();
+  renderDashboardStats();
+  renderReports();
   showToast('Status Updated', `Client marked as ${newStatus}.`, 'success');
   try {
     await apiCall('POST', { action: 'updateClientStatus', clientId, status: newStatus });
@@ -704,6 +652,8 @@ async function deleteClient(clientId) {
   // Also remove related tasks
   state.tasks = state.tasks.filter(t => t.ClientId !== clientId);
   renderPage(state.currentPage);
+  renderDashboardStats();
+  renderReports();
   showToast('Client Deleted', 'Client and related tasks removed.', 'info');
   try {
     await apiCall('POST', { action: 'deleteClient', clientId });
@@ -719,10 +669,11 @@ function renderTasks() {
 }
 
 function renderTasksStats() {
-  const total      = state.tasks.length;
-  const inProgress = state.tasks.filter(t => t.Status === 'In Progress').length;
-  const completed  = state.tasks.filter(t => t.Status === 'Completed').length;
-  const overdue    = state.tasks.filter(t => {
+  const fTasks = getFilteredTasks();
+  const total      = fTasks.length;
+  const inProgress = fTasks.filter(t => t.Status === 'In Progress').length;
+  const completed  = fTasks.filter(t => t.Status === 'Completed').length;
+  const overdue    = fTasks.filter(t => {
     if (!t.DueDate || t.Status === 'Completed' || t.Status === 'Cancelled') return false;
     return new Date(t.DueDate) < new Date();
   }).length;
@@ -749,8 +700,9 @@ function renderTasksTable() {
   const tbody = document.getElementById('tasks-tbody');
   if (!tbody) return;
 
+  const fTasks = getFilteredTasks();
   const q = state.searchQuery.toLowerCase();
-  const tasks = state.tasks.filter(t =>
+  const tasks = fTasks.filter(t =>
     !q || t.ClientName?.toLowerCase().includes(q) || t.TaskName?.toLowerCase().includes(q) || t.TaskType?.toLowerCase().includes(q)
   );
 
@@ -798,6 +750,10 @@ function renderTasksTable() {
               `<option value="${p}" ${t.PaymentStatus===p?'selected':''}>${p}</option>`
             ).join('')}
           </select>
+          ${t.Status === 'Completed' ? `
+          <button class="action-btn" style="color: var(--accent);" title="Generate Invoice" onclick="generateInvoice('${t.ID}')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16c0 1.1.9 2 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/><path d="M14 3v5h5"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+          </button>` : ''}
           <button class="action-btn danger" title="Delete task" onclick="deleteTask('${t.ID}')">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
           </button>
@@ -844,6 +800,10 @@ async function updateTaskStatus(selectEl, taskId) {
   if (idx !== -1) state.tasks[idx].Status = newStatus;
   renderTasksStats();
   renderDashboardStats();
+  renderReportsChart();
+  renderReports();
+  renderTasksTable();
+  if (state.currentPage === 'dashboard') renderDashboardTasksTable();
   showToast('Status Updated', `Task marked as ${newStatus}.`, 'success');
   try {
     await apiCall('POST', { action: 'updateTaskStatus', taskId, status: newStatus });
@@ -855,6 +815,8 @@ async function updatePaymentStatus(selectEl, taskId) {
   selectEl.className = `inline-select ${paySelectClass(newStatus)}`;
   const idx = state.tasks.findIndex(t => t.ID === taskId);
   if (idx !== -1) state.tasks[idx].PaymentStatus = newStatus;
+  renderDashboardStats();
+  renderReports();
   showToast('Payment Updated', `Payment marked as ${newStatus}.`, 'success');
   try {
     await apiCall('POST', { action: 'updatePaymentStatus', taskId, paymentStatus: newStatus });
@@ -873,46 +835,161 @@ async function deleteTask(taskId) {
   state.tasks = state.tasks.filter(t => t.ID !== taskId);
   renderTasks();
   renderDashboard();
+  renderReports();
   showToast('Task Deleted', '', 'info');
   try {
     await apiCall('POST', { action: 'deleteTask', taskId });
   } catch {}
 }
 
+async function generateInvoice(taskId) {
+  const task = state.tasks.find(t => (t.ID || t.id) === taskId);
+  if (!task) return;
+  
+  const tClientId = task.ClientId || task.clientId;
+  const client = state.clients.find(c => (c.ID || c.id) === tClientId) || {};
+
+  const cName = client.Name || client.name || task.ClientName || task.clientName || 'Unknown Client';
+  const cEmail = client.Email || client.email || '';
+  const cLocation = client.Location || client.location || '';
+  const tName = task.TaskName || task.taskName || 'Freelance Services';
+  const tType = task.TaskType || task.taskType || 'General';
+  const tAmount = task.Amount !== undefined ? task.Amount : (task.amount || 0);
+  const tID = task.ID || task.id || '';
+  
+  const invoiceElement = document.createElement('div');
+  invoiceElement.style.padding = '40px';
+  invoiceElement.style.fontFamily = "'Inter', Arial, sans-serif";
+  invoiceElement.style.color = '#333';
+  invoiceElement.style.backgroundColor = '#fff';
+  invoiceElement.style.lineHeight = '1.6';
+  
+  const today = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  
+  invoiceElement.innerHTML = `
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #eaeaea; padding-bottom: 20px; margin-bottom: 30px;">
+      <div>
+        <h1 style="margin: 0; color: #1c2333; font-size: 32px; font-weight: 700;">Tril Studio</h1>
+        <p style="margin: 5px 0 0; color: #666; font-size: 14px;">Professional Freelance Services</p>
+      </div>
+      <div style="text-align: right;">
+        <h2 style="margin: 0; color: #00d4ff; font-size: 24px;">INVOICE</h2>
+        <p style="margin: 5px 0 0; color: #666; font-size: 14px;">Date: ${today}</p>
+        <p style="margin: 2px 0 0; color: #666; font-size: 14px;">Invoice #: INV-${(tID && tID.split('_')[1]) ? tID.split('_')[1] : Math.floor(Math.random() * 10000)}</p>
+      </div>
+    </div>
+    
+    <div style="display: flex; justify-content: space-between; margin-bottom: 40px;">
+      <div>
+        <h3 style="margin: 0 0 10px; color: #666; font-size: 12px; text-transform: uppercase; letter-spacing: 1px;">Billed To</h3>
+        <p style="margin: 0; font-weight: 600; font-size: 18px; color: #1c2333;">${cName}</p>
+        ${cEmail ? `<p style="margin: 5px 0 0; color: #666; font-size: 14px;">${cEmail}</p>` : ''}
+        ${cLocation ? `<p style="margin: 5px 0 0; color: #666; font-size: 14px;">${cLocation}</p>` : ''}
+      </div>
+    </div>
+    
+    <table style="width: 100%; border-collapse: collapse; margin-bottom: 30px;">
+      <thead>
+        <tr>
+          <th style="text-align: left; padding: 12px; border-bottom: 2px solid #eaeaea; color: #666; font-weight: 600; font-size: 14px;">Description</th>
+          <th style="text-align: right; padding: 12px; border-bottom: 2px solid #eaeaea; color: #666; font-weight: 600; font-size: 14px;">Amount</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style="padding: 16px 12px; border-bottom: 1px solid #eaeaea;">
+            <div style="font-weight: 600; color: #1c2333; font-size: 16px;">${tName}</div>
+            <div style="color: #666; font-size: 14px; margin-top: 4px;">Task Type: ${tType}</div>
+          </td>
+          <td style="padding: 16px 12px; border-bottom: 1px solid #eaeaea; text-align: right; font-weight: 600; font-size: 16px; color: #1c2333;">
+            ${formatCurrency(tAmount)}
+          </td>
+        </tr>
+      </tbody>
+    </table>
+    
+    <div style="display: flex; justify-content: flex-end;">
+      <div style="width: 300px;">
+        <div style="display: flex; justify-content: space-between; padding: 12px; background-color: #f7f9fa; border-radius: 8px;">
+          <span style="font-weight: 600; color: #1c2333;">Total Due</span>
+          <span style="font-weight: 700; color: #00d4ff; font-size: 18px;">${formatCurrency(tAmount)}</span>
+        </div>
+      </div>
+    </div>
+    
+    <div style="margin-top: 60px; text-align: center; color: #888; font-size: 13px; border-top: 1px solid #eaeaea; padding-top: 20px;">
+      <p style="margin: 0;">Thank you for your business!</p>
+      <p style="margin: 4px 0 0;">If you have any questions about this invoice, please contact us.</p>
+    </div>
+  `;
+
+  invoiceElement.style.position = 'absolute';
+  invoiceElement.style.left = '-9999px';
+  document.body.appendChild(invoiceElement);
+
+  showToast('Generating Invoice', 'Please wait...', 'info');
+
+  const opt = {
+    margin:       10,
+    filename:     `Invoice_${cName}_${tName}.pdf`.replace(/[^a-zA-Z0-9_-]/g, '_'),
+    image:        { type: 'jpeg', quality: 0.98 },
+    html2canvas:  { scale: 2, useCORS: true },
+    jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+  };
+
+  try {
+    if (typeof html2pdf !== 'undefined') {
+      const worker = html2pdf().set(opt).from(invoiceElement);
+      worker.outputPdf('blob').then(function(pdfBlob) {
+        const pdfUrl = URL.createObjectURL(pdfBlob);
+        if (invoiceElement.parentNode) document.body.removeChild(invoiceElement);
+        window.open(pdfUrl, '_blank');
+      }).catch(err => {
+        console.error('Invoice generation failed:', err);
+        showToast('Error', 'Failed to generate invoice PDF', 'error');
+        if (invoiceElement.parentNode) document.body.removeChild(invoiceElement);
+      });
+    } else {
+      showToast('Error', 'PDF library not loaded.', 'error');
+      if (invoiceElement.parentNode) document.body.removeChild(invoiceElement);
+    }
+  } catch (err) {
+    console.error('Invoice generation error:', err);
+    if (invoiceElement.parentNode) document.body.removeChild(invoiceElement);
+  }
+}
+
 // ============================================================
 // REPORTS PAGE
 // ============================================================
 function renderReports() {
-  const completed   = state.tasks.filter(t => t.Status === 'Completed').length;
-  const pending     = state.tasks.filter(t => t.Status === 'Pending').length;
-  const inProgress  = state.tasks.filter(t => t.Status === 'In Progress').length;
-  const totalBilled = state.tasks.reduce((s, t) => s + (parseFloat(t.Amount)||0), 0);
-  const received    = state.tasks.filter(t => t.PaymentStatus === 'Received')
-                        .reduce((s, t) => s + (parseFloat(t.Amount)||0), 0);
+  const fTasks = getFilteredTasks();
+  const fClients = getFilteredClients();
+  const completed   = fTasks.filter(t => t.Status === 'Completed').length;
+  const pending     = fTasks.filter(t => t.Status === 'Pending').length;
+  const inProgress  = fTasks.filter(t => t.Status === 'In Progress').length;
+  
+  const totalBilled = fTasks.filter(t => t.Status === 'Completed').reduce((s, t) => s + (parseFloat(t.Amount)||0), 0);
+  const pendingAmount = fTasks.filter(t => t.Status === 'Pending').reduce((s, t) => s + (parseFloat(t.Amount)||0), 0);
 
-  setText('rpt-total-earnings', formatCurrency(totalBilled));
-  setText('rpt-received',       formatCurrency(received));
-  setText('rpt-pending-pay',    formatCurrency(totalBilled - received));
   setText('rpt-completed',      completed);
   setText('rpt-pending-tasks',  pending);
   setText('rpt-inprogress',     inProgress);
-  setText('rpt-total-clients',  state.clients.length);
-  setText('rpt-active-clients', state.clients.filter(c=>c.Status==='Active').length);
+  setText('rpt-total-clients',  fClients.length);
+  setText('rpt-pending-amount', formatCurrency(pendingAmount));
+  setText('rpt-total-earnings2', formatCurrency(totalBilled));
 
   renderReportsChart();
 }
 
 function renderReportsChart() {
-  const canvas = document.getElementById('reportsChart');
-  if (!canvas) return;
-  if (window._reportChart) window._reportChart.destroy();
+  const fTasks = getFilteredTasks();
+  const completed  = fTasks.filter(t => t.Status === 'Completed').length;
+  const inProgress = fTasks.filter(t => t.Status === 'In Progress').length;
+  const pending    = fTasks.filter(t => t.Status === 'Pending').length;
+  const other      = fTasks.length - completed - inProgress - pending;
 
-  const completed  = state.tasks.filter(t => t.Status === 'Completed').length;
-  const inProgress = state.tasks.filter(t => t.Status === 'In Progress').length;
-  const pending    = state.tasks.filter(t => t.Status === 'Pending').length;
-  const other      = state.tasks.length - completed - inProgress - pending;
-
-  window._reportChart = new Chart(canvas, {
+  const config = {
     type: 'doughnut',
     data: {
       labels: ['Completed','In Progress','Pending','Other'],
@@ -937,7 +1014,16 @@ function renderReportsChart() {
       },
       cutout: '65%',
     },
-  });
+  };
+
+  // Render on reports page
+  const canvas = document.getElementById('reportsChart');
+  if (canvas) {
+    if (window._reportChart) window._reportChart.destroy();
+    window._reportChart = new Chart(canvas, JSON.parse(JSON.stringify(config)));
+  }
+
+
 }
 
 // ============================================================
@@ -1162,6 +1248,7 @@ async function submitClient(existingId) {
       closeModal();
       renderClients();
       if (state.currentPage === 'dashboard') renderDashboard();
+      renderReports();
       showToast('Client Updated', `${name} has been updated.`, 'success');
 
       // Persist to sheet in background (fire-and-forget)
@@ -1196,6 +1283,7 @@ async function submitClient(existingId) {
       closeModal();
       renderClients();
       if (state.currentPage === 'dashboard') renderDashboard();
+      renderReports();
       showToast('Client Added ✓', `${name} added. Saving to Google Sheet…`, 'success');
 
       // Now save to sheet in background — modal is already closed
@@ -1284,6 +1372,7 @@ async function submitTask() {
   closeModal();
   renderTasks();                                        // always refresh tasks page
   if (state.currentPage === 'dashboard') renderDashboard();
+  renderReports();
   showToast('Task Created ✓', `"${name}" added. Saving to Google Sheet…`, 'success');
 
   // ---- Save to Google Sheet in background (fire-and-forget) ----
@@ -1426,23 +1515,16 @@ async function init() {
   // Check demo mode
   checkDemoMode();
 
-  // Dynamic Date Range 
-  const now = new Date();
-  const start = new Date(now.getFullYear(), now.getMonth(), 1);
-  const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-  const m1 = start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  const m2 = end.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  const drBtn = document.getElementById('date-range-btn');
-  if (drBtn) {
-    drBtn.innerHTML = `
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-        <line x1="16" y1="2" x2="16" y2="6" />
-        <line x1="8" y1="2" x2="8" y2="6" />
-        <line x1="3" y1="10" x2="21" y2="10" />
-      </svg>
-      ${m1} – ${m2}
-    `;
+  // Month Filter
+  const monthFilter = document.getElementById('month-filter');
+  if (monthFilter) {
+    const now = new Date();
+    state.selectedMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+    monthFilter.value = state.selectedMonth;
+    monthFilter.addEventListener('change', () => {
+      state.selectedMonth = monthFilter.value;
+      renderPage(state.currentPage);
+    });
   }
 
   // Keyboard shortcuts
