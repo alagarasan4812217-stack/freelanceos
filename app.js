@@ -414,7 +414,7 @@ function showPage(pageName) {
   if (nav) nav.classList.add('active');
 
   // Update topbar
-  const titles = { dashboard: 'Dashboard', clients: 'Clients', tasks: 'Tasks', reports: 'Reports' };
+  const titles = { dashboard: 'Dashboard', clients: 'Clients', tasks: 'Tasks', reports: 'Reports', pricing: 'Pricing' };
   document.getElementById('topbar-title').textContent = titles[pageName] || pageName;
 
   // Update Add button label
@@ -422,6 +422,9 @@ function showPage(pageName) {
   if (pageName === 'tasks') {
     addBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Add Task`;
     addBtn.onclick = () => openModal('task');
+  } else if (pageName === 'pricing') {
+    addBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Add New Pricing`;
+    addBtn.onclick = () => showToast('Coming Soon', 'Pricing management will be added later.', 'info');
   } else {
     addBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Add Client`;
     addBtn.onclick = () => openModal('client');
@@ -437,6 +440,7 @@ function renderPage(name) {
     case 'clients':   renderClients();   break;
     case 'tasks':     renderTasks();     break;
     case 'reports':   renderReports();   break;
+    case 'pricing':   /* static UI for now */ break;
   }
 }
 

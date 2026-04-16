@@ -105,6 +105,15 @@
           </svg>
           Summary Statistics
         </a>
+        <a class="nav-item" data-page="pricing" onclick="showPage('pricing')" href="javascript:void(0)"
+          id="nav-pricing">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+            stroke-linejoin="round">
+            <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path>
+            <line x1="7" y1="7" x2="7.01" y2="7"></line>
+          </svg>
+          Pricing
+        </a>
       </nav>
 
       <div class="sidebar-user">
@@ -586,6 +595,119 @@
 
 
 
+        </section>
+
+        <!-- ============================================================
+        PAGE: PRICING
+        ============================================================ -->
+        <section id="page-pricing" class="page">
+          
+          <!-- Pricing List Panel -->
+          <div class="panel" style="margin-bottom: 32px;">
+            <div class="panel-header">
+              <div>
+                <div class="panel-title">Pricing List</div>
+                <div class="panel-subtitle">Manage and view all your client details and engagement</div>
+              </div>
+              <div class="panel-actions">
+                <button class="text-btn">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                    <polyline points="7 10 12 15 17 10" />
+                    <line x1="12" y1="15" x2="12" y2="3" />
+                  </svg>
+                  Export
+                </button>
+                <button class="text-btn">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="12" y1="5" x2="12" y2="19" />
+                    <polyline points="19 12 12 19 5 12" />
+                  </svg>
+                  Sort by Date
+                </button>
+              </div>
+            </div>
+            <div class="table-wrapper">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>S.No</th>
+                    <th>Task Name</th>
+                    <th>Total Billed</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td class="sno-cell">01</td>
+                    <td class="fw-500">Acme Corp</td>
+                    <td class="fw-500">$12,400</td>
+                    <td><span class="badge badge-green">● Active</span></td>
+                  </tr>
+                  <tr>
+                    <td class="sno-cell">02</td>
+                    <td class="fw-500">Acme Corp</td>
+                    <td class="fw-500">$12,400</td>
+                    <td><span class="badge badge-green">● Active</span></td>
+                  </tr>
+                  <tr>
+                    <td class="sno-cell">03</td>
+                    <td class="fw-500">Acme Corp</td>
+                    <td class="fw-500">$12,400</td>
+                    <td><span class="badge badge-green">● Active</span></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Packages Area -->
+          <h2 style="font-size: 19px; font-weight: 700; color: var(--text-primary); margin-bottom: 20px; letter-spacing: -0.3px;">Packages</h2>
+          <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px;">
+            
+            <!-- Card 1 -->
+            <div class="panel package-card" style="padding: 32px; display: flex; flex-direction: column; border-radius: var(--radius-lg); transition: transform 0.2s, box-shadow 0.2s; cursor: pointer;">
+              <div style="font-size: 32px; font-weight: 800; color: var(--text-primary); margin-bottom: 12px; letter-spacing: -1px;">$20<span style="font-size: 14px; font-weight: 500; color: var(--text-muted); letter-spacing: 0;">/mont</span></div>
+              <div style="font-size: 22px; font-weight: 700; color: var(--text-primary); margin-bottom: 8px;">Intro</div>
+              <div style="font-size: 13.5px; color: var(--text-muted); line-height: 1.5; margin-bottom: 24px; padding-bottom: 24px; border-bottom: 1px solid var(--border-subtle);">For most businesses that want to optimize web queries.</div>
+              <ul style="list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 14px;">
+                <li style="display: flex; align-items: center; gap: 10px; font-size: 13.5px; color: var(--text-secondary);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-primary)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> All limited links</li>
+                <li style="display: flex; align-items: center; gap: 10px; font-size: 13.5px; color: var(--text-secondary);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-primary)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Own analytics platform</li>
+                <li style="display: flex; align-items: center; gap: 10px; font-size: 13.5px; color: var(--text-secondary);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-primary)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Chat support</li>
+                <li style="display: flex; align-items: center; gap: 10px; font-size: 13.5px; color: var(--text-secondary);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-primary)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Optimize hashtags</li>
+                <li style="display: flex; align-items: center; gap: 10px; font-size: 13.5px; color: var(--text-secondary);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-primary)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Unlimited users</li>
+              </ul>
+            </div>
+            
+            <!-- Card 2 -->
+            <div class="panel package-card" style="padding: 32px; display: flex; flex-direction: column; border-radius: var(--radius-lg); transition: transform 0.2s, box-shadow 0.2s; cursor: pointer;">
+              <div style="font-size: 32px; font-weight: 800; color: var(--text-primary); margin-bottom: 12px; letter-spacing: -1px;">$20<span style="font-size: 14px; font-weight: 500; color: var(--text-muted); letter-spacing: 0;">/mont</span></div>
+              <div style="font-size: 22px; font-weight: 700; color: var(--text-primary); margin-bottom: 8px;">Intro</div>
+              <div style="font-size: 13.5px; color: var(--text-muted); line-height: 1.5; margin-bottom: 24px; padding-bottom: 24px; border-bottom: 1px solid var(--border-subtle);">For most businesses that want to optimize web queries.</div>
+              <ul style="list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 14px;">
+                <li style="display: flex; align-items: center; gap: 10px; font-size: 13.5px; color: var(--text-secondary);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-primary)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> All limited links</li>
+                <li style="display: flex; align-items: center; gap: 10px; font-size: 13.5px; color: var(--text-secondary);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-primary)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Own analytics platform</li>
+                <li style="display: flex; align-items: center; gap: 10px; font-size: 13.5px; color: var(--text-secondary);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-primary)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Chat support</li>
+                <li style="display: flex; align-items: center; gap: 10px; font-size: 13.5px; color: var(--text-secondary);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-primary)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Optimize hashtags</li>
+                <li style="display: flex; align-items: center; gap: 10px; font-size: 13.5px; color: var(--text-secondary);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-primary)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Unlimited users</li>
+              </ul>
+            </div>
+            
+            <!-- Card 3 -->
+            <div class="panel package-card" style="padding: 32px; display: flex; flex-direction: column; border-radius: var(--radius-lg); transition: transform 0.2s, box-shadow 0.2s; cursor: pointer;">
+              <div style="font-size: 32px; font-weight: 800; color: var(--text-primary); margin-bottom: 12px; letter-spacing: -1px;">$20<span style="font-size: 14px; font-weight: 500; color: var(--text-muted); letter-spacing: 0;">/mont</span></div>
+              <div style="font-size: 22px; font-weight: 700; color: var(--text-primary); margin-bottom: 8px;">Intro</div>
+              <div style="font-size: 13.5px; color: var(--text-muted); line-height: 1.5; margin-bottom: 24px; padding-bottom: 24px; border-bottom: 1px solid var(--border-subtle);">For most businesses that want to optimize web queries.</div>
+              <ul style="list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 14px;">
+                <li style="display: flex; align-items: center; gap: 10px; font-size: 13.5px; color: var(--text-secondary);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-primary)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> All limited links</li>
+                <li style="display: flex; align-items: center; gap: 10px; font-size: 13.5px; color: var(--text-secondary);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-primary)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Own analytics platform</li>
+                <li style="display: flex; align-items: center; gap: 10px; font-size: 13.5px; color: var(--text-secondary);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-primary)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Chat support</li>
+                <li style="display: flex; align-items: center; gap: 10px; font-size: 13.5px; color: var(--text-secondary);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-primary)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Optimize hashtags</li>
+                <li style="display: flex; align-items: center; gap: 10px; font-size: 13.5px; color: var(--text-secondary);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-primary)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Unlimited users</li>
+              </ul>
+            </div>
+            
+          </div>
         </section>
 
       </main><!-- /page-content -->
