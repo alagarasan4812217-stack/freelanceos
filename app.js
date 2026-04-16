@@ -462,8 +462,8 @@ function renderDashboardStats() {
   setText('dash-received',       formatCurrency(received));
   setText('dash-pending-pay',    formatCurrency(totalBilled - received));
   
-  const activeClientIds = new Set(fTasks.map(t => t.ClientId || t.clientId));
-  setText('dash-active-clients', activeClientIds.size > 0 ? activeClientIds.size : fClients.filter(c=>c.Status==='Active').length);
+  const activeClientsCount = fClients.filter(c => c.Status === 'Active').length;
+  setText('dash-active-clients', activeClientsCount);
 }
 
 function setCard(id, value, badge, up) {
