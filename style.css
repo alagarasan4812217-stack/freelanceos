@@ -3,7 +3,7 @@
    Dark Theme with Cyan Accent
    ============================================================ */
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap');
 
 /* ---- CSS Variables ---- */
 :root {
@@ -50,10 +50,11 @@
 
 /* ---- Reset & Base ---- */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+input, button, select, textarea { font-family: inherit; }
 
 html, body {
   height: 100%;
-  font-family: 'Inter', system-ui, sans-serif;
+  font-family: 'Outfit', system-ui, sans-serif;
   background: var(--bg-base);
   color: var(--text-primary);
   font-size: 14px;

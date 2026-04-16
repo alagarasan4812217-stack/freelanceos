@@ -863,7 +863,7 @@ async function generateInvoice(taskId) {
   
   const invoiceElement = document.createElement('div');
   invoiceElement.style.padding = '40px';
-  invoiceElement.style.fontFamily = "'Inter', Arial, sans-serif";
+  invoiceElement.style.fontFamily = "'Outfit', Arial, sans-serif";
   invoiceElement.style.color = '#333';
   invoiceElement.style.backgroundColor = '#fff';
   invoiceElement.style.lineHeight = '1.6';
