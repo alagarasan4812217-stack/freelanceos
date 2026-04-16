@@ -63,16 +63,28 @@ function generateId(prefix) {
 function formatDate(dateStr) {
   if (!dateStr) return '—';
   try {
-    // If the input is YYYY-MM-DD, parse it manually to avoid timezone shift
-    if (typeof dateStr === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateStr.trim())) {
-      const [y, m, d] = dateStr.trim().split('-');
-      const dateObj = new Date(y, m - 1, d);
-      return dateObj.toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
-    }
-    const d = new Date(dateStr);
-    if (isNaN(d)) return dateStr;
-    return d.toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
+    const dateObj = parseDate(dateStr);
+    if (isNaN(dateObj)) return dateStr;
+    return dateObj.toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
   } catch { return dateStr; }
+}
+
+/**
+ * Robustly parse date strings (especially YYYY-MM-DD) to avoid timezone shifts.
+ */
+function parseDate(dateStr) {
+  if (!dateStr) return new Date(NaN);
+  if (dateStr instanceof Date) return dateStr;
+  
+  const s = String(dateStr).trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
+    const parts = s.split('T')[0].split('-');
+    const y = parseInt(parts[0], 10);
+    const m = parseInt(parts[1], 10) - 1;
+    const d = parseInt(parts[2], 10);
+    return new Date(y, m, d);
+  }
+  return new Date(s);
 }
 
 function formatCurrency(val) {
@@ -225,20 +237,22 @@ async function apiCall(method, payload) {
         result = await res.json();
       }
     } else {
-      // CRITICAL: Use mode:'no-cors' to bypass the CORS redirect issue.
-      // Apps Script redirects POST from script.google.com → script.googleusercontent.com,
-      // which causes "Failed to fetch" in browsers due to CORS preflight on the redirect.
-      // With no-cors, the response is opaque (unreadable) but the POST data IS sent to
-      // the server and processed. Since we use optimistic UI updates we don't need the
-      // response body — just assume success if the fetch itself doesn't throw.
-      await fetch(CONFIG.APPS_SCRIPT_URL, {
+      const res = await fetch(CONFIG.APPS_SCRIPT_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify(payload),
-        mode: 'no-cors',
       });
-      // Response is opaque with no-cors; optimistically treat as success
-      result = { success: true };
+      if (!res.ok) throw new Error(`Server returned HTTP ${res.status}`);
+      
+      // Try to parse JSON from the response.
+      // Even with redirects, modern browsers will allow reading the final response
+      // if it contains proper CORS headers (which Apps Script provides for JSON).
+      try {
+        result = await res.json();
+      } catch (parseErr) {
+        console.warn('[FreelanceOS] Could not parse POST response, assuming success.');
+        result = { success: true };
+      }
     }
 
     // Apps Script sometimes returns { error: "..." } with HTTP 200 —
@@ -453,16 +467,17 @@ function renderDashboard() {
 }
 
 function renderDashboardStats() {
-  const fTasks = getFilteredTasks();
-  const fClients = getFilteredClients();
-  const totalBilled = fTasks.filter(t => t.Status === 'Completed').reduce((s, t) => s + (parseFloat(t.Amount)||0), 0);
-  const received    = fTasks.filter(t => t.PaymentStatus === 'Received').reduce((s, t) => s + (parseFloat(t.Amount)||0), 0);
+  // Lifetime Financials
+  const totalBilled = state.tasks.filter(t => t.Status === 'Completed').reduce((s, t) => s + (parseFloat(t.Amount)||0), 0);
+  const received    = state.tasks.filter(t => t.PaymentStatus === 'Received').reduce((s, t) => s + (parseFloat(t.Amount)||0), 0);
+  const pending     = Math.max(0, totalBilled - received);
 
   setText('dash-total-earnings', formatCurrency(totalBilled));
   setText('dash-received',       formatCurrency(received));
-  setText('dash-pending-pay',    formatCurrency(totalBilled - received));
+  setText('dash-pending-pay',    formatCurrency(pending));
   
-  const activeClientsCount = fClients.filter(c => c.Status === 'Active').length;
+  // Global Active Count
+  const activeClientsCount = state.clients.filter(c => c.Status === 'Active').length;
   setText('dash-active-clients', activeClientsCount);
 }
 
@@ -485,12 +500,16 @@ function renderDashboardTasksTable() {
     return;
   }
 
-  tbody.innerHTML = tasks.map((t, i) => `
+  tbody.innerHTML = tasks.map((t, i) => {
+    const client = state.clients.find(c => c.ID === t.ClientId);
+    const logoHtml = (client && client.LogoUrl) ? `<img src="${escHtml(client.LogoUrl)}" referrerpolicy="no-referrer" alt="">` : getInitials(t.ClientName);
+
+    return `
     <tr>
-      <td class="sno-cell">${String(i+1).padStart(2,'0')}</td>
+      <td class="sno-cell">${String(i + 1).padStart(2, '0')}</td>
       <td>
         <div class="flex gap-8">
-          <span class="client-avatar" style="background:${avatarColor(t.ClientName)}">${t.LogoUrl ? `<img src="${escHtml(t.LogoUrl)}" alt="">` : getInitials(t.ClientName)}</span>
+          <span class="client-avatar" style="background:${avatarColor(t.ClientName)}">${logoHtml}</span>
           <span class="fw-500">${escHtml(t.ClientName)}</span>
         </div>
       </td>
@@ -499,7 +518,7 @@ function renderDashboardTasksTable() {
       <td>${statusBadge(t.Status)}</td>
       <td class="fw-500">${formatCurrency(t.Amount)}</td>
     </tr>
-  `).join('');
+  `;}).join('');
 }
 
 function statusBadge(status) {
@@ -528,13 +547,15 @@ function renderClients() {
 }
 
 function renderClientsStats() {
-  const fClients = getFilteredClients();
-  const total    = fClients.length;
-  const active   = fClients.filter(c => c.Status === 'Active').length;
-  const inactive = fClients.filter(c => c.Status === 'Inactive').length;
+  // Global Metrics
+  const total    = state.clients.length;
+  const active   = state.clients.filter(c => c.Status === 'Active').length;
+  const inactive = state.clients.filter(c => c.Status === 'Inactive').length;
+  
+  // Month-Specific Metric (always relative to now, not filter)
   const now = new Date();
-  const newMonth = fClients.filter(c => {
-    const d = new Date(c.JoinedDate);
+  const newMonth = state.clients.filter(c => {
+    const d = parseDate(c.JoinedDate);
     return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
   }).length;
 
@@ -550,8 +571,8 @@ let clientsSortDesc = true;
 function sortClientsByDate() {
   clientsSortDesc = !clientsSortDesc;
   state.clients.sort((a, b) => {
-    const dA = new Date(a.JoinedDate || 0);
-    const dB = new Date(b.JoinedDate || 0);
+    const dA = parseDate(a.JoinedDate).getTime() || 0;
+    const dB = parseDate(b.JoinedDate).getTime() || 0;
     return clientsSortDesc ? dB - dA : dA - dB;
   });
   renderClientsTable();
@@ -582,7 +603,7 @@ function renderClientsTable() {
     <tr>
       <td>
         <div class="client-cell">
-          <span class="client-avatar" style="background:${avatarColor(c.Name)}">${c.LogoUrl ? `<img src="${escHtml(c.LogoUrl)}" alt="">` : getInitials(c.Name)}</span>
+          <span class="client-avatar" style="background:${avatarColor(c.Name)}">${c.LogoUrl ? `<img src="${escHtml(c.LogoUrl)}" referrerpolicy="no-referrer" alt="">` : getInitials(c.Name)}</span>
           <div class="client-info">
             <div class="c-name">${escHtml(c.Name)}</div>
             <div class="c-email">${escHtml(c.Email || '')}</div>
@@ -642,8 +663,7 @@ async function toggleClientStatus(clientId, newStatus) {
   if (idx === -1) return;
   state.clients[idx].Status = newStatus;
   renderClients();
-  renderDashboardStats();
-  renderReports();
+  updateAllStats();
   showToast('Status Updated', `Client marked as ${newStatus}.`, 'success');
   try {
     await apiCall('POST', { action: 'updateClientStatus', clientId, status: newStatus });
@@ -656,8 +676,7 @@ async function deleteClient(clientId) {
   // Also remove related tasks
   state.tasks = state.tasks.filter(t => t.ClientId !== clientId);
   renderPage(state.currentPage);
-  renderDashboardStats();
-  renderReports();
+  updateAllStats();
   showToast('Client Deleted', 'Client and related tasks removed.', 'info');
   try {
     await apiCall('POST', { action: 'deleteClient', clientId });
@@ -673,13 +692,16 @@ function renderTasks() {
 }
 
 function renderTasksStats() {
-  const fTasks = getFilteredTasks();
-  const total      = fTasks.length;
-  const inProgress = fTasks.filter(t => t.Status === 'In Progress').length;
-  const completed  = fTasks.filter(t => t.Status === 'Completed').length;
-  const overdue    = fTasks.filter(t => {
+  // Global Metrics
+  const total      = state.tasks.length;
+  const inProgress = state.tasks.filter(t => t.Status === 'In Progress').length;
+  const completed  = state.tasks.filter(t => t.Status === 'Completed').length;
+  
+  const today = new Date();
+  today.setHours(0,0,0,0);
+  const overdue    = state.tasks.filter(t => {
     if (!t.DueDate || t.Status === 'Completed' || t.Status === 'Cancelled') return false;
-    return new Date(t.DueDate) < new Date();
+    return parseDate(t.DueDate) < today;
   }).length;
 
   setText('tk-stat-total',      total);
@@ -692,8 +714,8 @@ let tasksSortDesc = true;
 function sortTasksByDate() {
   tasksSortDesc = !tasksSortDesc;
   state.tasks.sort((a, b) => {
-    const dA = new Date(a.AssignedDate || 0);
-    const dB = new Date(b.AssignedDate || 0);
+    const dA = parseDate(a.AssignedDate).getTime() || 0;
+    const dB = parseDate(b.AssignedDate).getTime() || 0;
     return tasksSortDesc ? dB - dA : dA - dB;
   });
   renderTasksTable();
@@ -721,12 +743,15 @@ function renderTasksTable() {
   tbody.innerHTML = tasks.map((t, i) => {
     const statusClass = statusSelectClass(t.Status);
     const payClass    = paySelectClass(t.PaymentStatus);
+    const client      = state.clients.find(c => c.ID === t.ClientId);
+    const logoHtml    = (client && client.LogoUrl) ? `<img src="${escHtml(client.LogoUrl)}" referrerpolicy="no-referrer" alt="">` : getInitials(t.ClientName);
+    
     return `
     <tr>
       <td class="sno-cell">#${String(i+1).padStart(3,'0')}</td>
       <td>
         <div class="client-cell">
-          <span class="client-avatar" style="background:${avatarColor(t.ClientName)}">${getInitials(t.ClientName)}</span>
+          <span class="client-avatar" style="background:${avatarColor(t.ClientName)}">${logoHtml}</span>
           <span class="fw-500">${escHtml(t.ClientName)}</span>
         </div>
       </td>
@@ -802,10 +827,7 @@ async function updateTaskStatus(selectEl, taskId) {
   selectEl.className = `inline-select ${statusSelectClass(newStatus)}`;
   const idx = state.tasks.findIndex(t => t.ID === taskId);
   if (idx !== -1) state.tasks[idx].Status = newStatus;
-  renderTasksStats();
-  renderDashboardStats();
-  renderReportsChart();
-  renderReports();
+  updateAllStats();
   renderTasksTable();
   if (state.currentPage === 'dashboard') renderDashboardTasksTable();
   showToast('Status Updated', `Task marked as ${newStatus}.`, 'success');
@@ -819,8 +841,7 @@ async function updatePaymentStatus(selectEl, taskId) {
   selectEl.className = `inline-select ${paySelectClass(newStatus)}`;
   const idx = state.tasks.findIndex(t => t.ID === taskId);
   if (idx !== -1) state.tasks[idx].PaymentStatus = newStatus;
-  renderDashboardStats();
-  renderReports();
+  updateAllStats();
   showToast('Payment Updated', `Payment marked as ${newStatus}.`, 'success');
   try {
     await apiCall('POST', { action: 'updatePaymentStatus', taskId, paymentStatus: newStatus });
@@ -832,6 +853,11 @@ async function updateTaskType(selectEl, taskId) {
   selectEl.className = `inline-select ${typeSelectClass(newType)}`;
   const idx = state.tasks.findIndex(t => t.ID === taskId);
   if (idx !== -1) state.tasks[idx].TaskType = newType;
+  updateAllStats();
+  showToast('Type Updated', `Task type changed to ${newType}.`, 'success');
+  try {
+    await apiCall('POST', { action: 'updateTaskType', taskId, taskType: newType });
+  } catch {}
 }
 
 async function deleteTask(taskId) {
@@ -839,7 +865,7 @@ async function deleteTask(taskId) {
   state.tasks = state.tasks.filter(t => t.ID !== taskId);
   renderTasks();
   renderDashboard();
-  renderReports();
+  updateAllStats();
   showToast('Task Deleted', '', 'info');
   try {
     await apiCall('POST', { action: 'deleteTask', taskId });
@@ -967,23 +993,37 @@ async function generateInvoice(taskId) {
 // REPORTS PAGE
 // ============================================================
 function renderReports() {
+  // For counts and breakdown, we use the month filter if set
   const fTasks = getFilteredTasks();
-  const fClients = getFilteredClients();
-  const completed   = fTasks.filter(t => t.Status === 'Completed').length;
-  const pending     = fTasks.filter(t => t.Status === 'Pending').length;
-  const inProgress  = fTasks.filter(t => t.Status === 'In Progress').length;
+  const completedCount   = fTasks.filter(t => t.Status === 'Completed').length;
+  const pendingCount     = fTasks.filter(t => t.Status === 'Pending').length;
+  const inProgressCount  = fTasks.filter(t => t.Status === 'In Progress').length;
   
-  const totalBilled = fTasks.filter(t => t.Status === 'Completed').reduce((s, t) => s + (parseFloat(t.Amount)||0), 0);
-  const pendingAmount = fTasks.filter(t => t.Status === 'Pending').reduce((s, t) => s + (parseFloat(t.Amount)||0), 0);
+  // Global/Lifetime Statistics
+  const totalClients  = state.clients.length;
+  const totalCompleted = state.tasks.filter(t => t.Status === 'Completed').reduce((s,t) => s + (parseFloat(t.Amount)||0), 0);
+  const totalReceived  = state.tasks.filter(t => t.PaymentStatus === 'Received').reduce((s,t) => s + (parseFloat(t.Amount)||0), 0);
+  const lifetimePending = Math.max(0, totalCompleted - totalReceived);
 
-  setText('rpt-completed',      completed);
-  setText('rpt-pending-tasks',  pending);
-  setText('rpt-inprogress',     inProgress);
-  setText('rpt-total-clients',  fClients.length);
-  setText('rpt-pending-amount', formatCurrency(pendingAmount));
-  setText('rpt-total-earnings2', formatCurrency(totalBilled));
+  setText('rpt-completed',      completedCount);
+  setText('rpt-pending-tasks',  pendingCount);
+  setText('rpt-inprogress',     inProgressCount);
+  setText('rpt-total-clients',  totalClients);
+  setText('rpt-pending-amount', formatCurrency(lifetimePending));
+  setText('rpt-total-earnings2', formatCurrency(totalCompleted));
 
   renderReportsChart();
+}
+
+/**
+ * Unified update function to keep all UI stats in sync.
+ * Called whenever data (clients or tasks) is modified.
+ */
+function updateAllStats() {
+  renderDashboardStats();
+  renderClientsStats();
+  renderTasksStats();
+  renderReports();
 }
 
 function renderReportsChart() {
@@ -1059,6 +1099,21 @@ function openEditClientModal(clientId) {
   const content = document.getElementById('modal-content');
   content.innerHTML = buildClientModalHtml(client);
   setupImageUpload();
+  
+  // If editing and has logo, show preview
+  if (client.LogoUrl) {
+    const preview = document.getElementById('upload-preview');
+    const area = document.getElementById('upload-area');
+    if (preview && area) {
+      preview.src = client.LogoUrl;
+      preview.setAttribute('referrerpolicy', 'no-referrer');
+      preview.style.display = 'block';
+      area.querySelector('.upload-icon').style.display = 'none';
+      area.querySelector('.upload-text').style.display = 'none';
+      area.querySelector('.upload-hint').style.display = 'none';
+    }
+  }
+  
   overlay.classList.add('open');
 }
 
@@ -1104,12 +1159,12 @@ function buildClientModalHtml(existing = null) {
       <label class="form-label">Logo / Avatar (optional)</label>
       <div class="upload-area" id="upload-area">
         <input type="file" id="logo-input" accept="image/*">
-        <img id="upload-preview" class="upload-preview" src="" alt="">
-        <div class="upload-icon">
+        <img id="upload-preview" class="upload-preview" referrerpolicy="no-referrer" src="${isEdit && existing.LogoUrl ? escHtml(existing.LogoUrl) : ''}" style="${isEdit && existing.LogoUrl ? 'display: block;' : ''}" alt="">
+        <div class="upload-icon" style="${isEdit && existing.LogoUrl ? 'display: none;' : ''}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
         </div>
-        <div class="upload-text">Click or drag to upload logo</div>
-        <div class="upload-hint">PNG, JPG, GIF up to 5MB</div>
+        <div class="upload-text" style="${isEdit && existing.LogoUrl ? 'display: none;' : ''}">Click or drag to upload logo</div>
+        <div class="upload-hint" style="${isEdit && existing.LogoUrl ? 'display: none;' : ''}">PNG, JPG, GIF up to 5MB</div>
       </div>
     </div>
     <div class="modal-footer">
@@ -1252,16 +1307,16 @@ async function submitClient(existingId) {
       closeModal();
       renderClients();
       if (state.currentPage === 'dashboard') renderDashboard();
-      renderReports();
+      updateAllStats();
       showToast('Client Updated', `${name} has been updated.`, 'success');
 
       // Persist to sheet in background (fire-and-forget)
+      const updateClientData = { id: existingId, name, email, location, type, status };
+      if (driveLogoUrl) updateClientData.logoUrl = driveLogoUrl;
+
       apiCall('POST', {
         action: 'updateClient',
-        client: {
-          id: existingId, name, email, location, type, status,
-          logoUrl: driveLogoUrl,
-        },
+        client: updateClientData,
       }).catch(err => console.warn('[FreelanceOS] Background updateClient failed:', err.message));
 
     } else {
@@ -1287,7 +1342,7 @@ async function submitClient(existingId) {
       closeModal();
       renderClients();
       if (state.currentPage === 'dashboard') renderDashboard();
-      renderReports();
+      updateAllStats();
       showToast('Client Added ✓', `${name} added. Saving to Google Sheet…`, 'success');
 
       // Now save to sheet in background — modal is already closed
@@ -1376,7 +1431,7 @@ async function submitTask() {
   closeModal();
   renderTasks();                                        // always refresh tasks page
   if (state.currentPage === 'dashboard') renderDashboard();
-  renderReports();
+  updateAllStats();
   showToast('Task Created ✓', `"${name}" added. Saving to Google Sheet…`, 'success');
 
   // ---- Save to Google Sheet in background (fire-and-forget) ----

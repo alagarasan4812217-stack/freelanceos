@@ -102,6 +102,9 @@ function doPost(e) {
       case 'updatePaymentStatus':
         result = updatePaymentStatus(data.taskId, data.paymentStatus);
         break;
+      case 'updateTaskType':
+        result = updateTaskType(data.taskId, data.taskType);
+        break;
       case 'updateClientStatus':
         result = updateClientStatus(data.clientId, data.status);
         break;
@@ -306,6 +309,20 @@ function updatePaymentStatus(taskId, paymentStatus) {
   return { error: 'Task not found' };
 }
 
+function updateTaskType(taskId, taskType) {
+  const sheet = getSheet(TASKS_SHEET);
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const col = headers.indexOf('TaskType') + 1;
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] === taskId) {
+      sheet.getRange(i + 1, col).setValue(taskType);
+      return { success: true };
+    }
+  }
+  return { error: 'Task not found' };
+}
+
 // ---- IMAGE UPLOAD ----
 function uploadImageToDrive(base64Data, filename, mimeType) {
   try {
@@ -334,7 +351,7 @@ function uploadImageToDrive(base64Data, filename, mimeType) {
     }
 
     file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-    const url = 'https://drive.google.com/uc?id=' + file.getId() + '&export=view';
+    const url = 'https://drive.google.com/uc?export=view&id=' + file.getId();
     Logger.log('Image uploaded to Drive (' + uploadedTo + '): ' + url);
     return { success: true, url: url, fileId: file.getId(), location: uploadedTo };
 
