@@ -733,7 +733,7 @@ function renderTasksTable() {
       <td class="text-muted">${formatDate(t.AssignedDate)}</td>
       <td>
         <select class="inline-select ${typeSelectClass(t.TaskType)}" onchange="updateTaskType(this, '${t.ID}')">
-          ${['Design','Development','SEO','Branding','Maintenance','Consulting','Copywriting','Marketing'].map(tp =>
+          ${['Logo Design', 'Poster', 'Flyer', 'Brochure', 'Social Media Ads', 'Product Boxes', 'Label', 'Books', 'Social Media Banners', 'Website UI/UX', 'Mobile App UI/UX', 'Logo Animation', 'Video Editing', 'Reel Editing', 'Website Development', 'Website Hosting'].map(tp =>
             `<option value="${tp}" ${t.TaskType===tp?'selected':''}>${tp}</option>`
           ).join('')}
         </select>
@@ -1144,7 +1144,7 @@ function buildTaskModalHtml() {
         <label class="form-label">Task Type</label>
         <select id="tf-type" class="form-select">
           <option value="">Select type...</option>
-          ${['Design','Development','SEO','Branding','Maintenance','Consulting','Copywriting','Marketing'].map(t =>
+          ${['Logo Design', 'Poster', 'Flyer', 'Brochure', 'Social Media Ads', 'Product Boxes', 'Label', 'Books', 'Social Media Banners', 'Website UI/UX', 'Mobile App UI/UX', 'Logo Animation', 'Video Editing', 'Reel Editing', 'Website Development', 'Website Hosting'].map(t =>
             `<option value="${t}">${t}</option>`
           ).join('')}
         </select>
