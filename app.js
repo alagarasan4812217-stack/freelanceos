@@ -10,6 +10,7 @@
 const state = {
   clients: [],
   tasks: [],
+  pricing: [],
   currentPage: 'dashboard',
   chartInstance: null,
   chartPeriod: 'monthly',
@@ -51,6 +52,12 @@ const DEMO_TASKS = [
   { ID:'TSK_004', ClientId:'CLT_004', ClientName:'Soylent Corp',     TaskName:'Brand Identity',        TaskType:'Branding',    Amount:4000, Status:'Pending',   PaymentStatus:'Pending',  AssignedDate:'2023-10-14', DueDate:'2023-11-02' },
   { ID:'TSK_005', ClientId:'CLT_005', ClientName:'Initech Labs',     TaskName:'Site Maintenance',      TaskType:'Maintenance', Amount:800,  Status:'In Progress',PaymentStatus:'Pending',  AssignedDate:'2023-10-01', DueDate:'2023-10-31' },
   { ID:'TSK_006', ClientId:'CLT_006', ClientName:'Umbrella Corp',    TaskName:'Growth Consulting',     TaskType:'Consulting',  Amount:1500, Status:'Cancelled', PaymentStatus:'Pending',  AssignedDate:'2023-09-20', DueDate:'2023-10-10' },
+];
+
+const DEMO_PRICING = [
+  { ID:'PRC_001', TaskName:'Website Development', TotalBilled:12400, Status:'Active', CreatedAt:'2023-10-12T00:00:00Z' },
+  { ID:'PRC_002', TaskName:'SEO Audit', TotalBilled:3500, Status:'Active', CreatedAt:'2023-10-14T00:00:00Z' },
+  { ID:'PRC_003', TaskName:'Logo Design', TotalBilled:5000, Status:'Inactive', CreatedAt:'2023-10-15T00:00:00Z' },
 ];
 
 // ============================================================
@@ -273,7 +280,7 @@ function simulateApi(method, payload) {
   return new Promise(resolve => {
     setTimeout(() => {
       if (method === 'GET' && payload.action === 'getAllData') {
-        resolve({ clients: [...DEMO_CLIENTS], tasks: [...DEMO_TASKS] });
+        resolve({ clients: [...DEMO_CLIENTS], tasks: [...DEMO_TASKS], pricing: [...DEMO_PRICING] });
       } else {
         resolve({ success: true, id: generateId('ID') });
       }
@@ -318,6 +325,7 @@ async function loadAllData() {
     // Demo mode: use built-in sample data
     state.clients = [...DEMO_CLIENTS];
     state.tasks   = [...DEMO_TASKS];
+    state.pricing = [...DEMO_PRICING];
     return;
   }
   try {
@@ -330,11 +338,15 @@ async function loadAllData() {
     state.tasks = Array.isArray(data.tasks)
       ? data.tasks.map(normalizeSheetRow).filter(t => t.ID || t.TaskName)
       : [];
+    state.pricing = Array.isArray(data.pricing)
+      ? data.pricing.map(normalizeSheetRow).filter(p => p.ID || p.TaskName)
+      : [];
     showToast('Connected', `Loaded ${state.clients.length} clients, ${state.tasks.length} tasks from Google Sheets.`, 'success');
   } catch (err) {
     console.warn('Sheet load failed, starting with empty data:', err);
     state.clients = [];
     state.tasks   = [];
+    state.pricing = [];
     showToast('Sheet Load Error', 'Could not load data. Check your Apps Script URL.', 'info');
   } finally {
     showSyncIndicator(false);
@@ -438,7 +450,7 @@ function showPage(pageName) {
     addBtn.onclick = () => openModal('task');
   } else if (pageName === 'pricing') {
     addBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Add New Pricing`;
-    addBtn.onclick = () => showToast('Coming Soon', 'Pricing management will be added later.', 'info');
+    addBtn.onclick = () => openModal('pricing');
   } else {
     addBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Add Client`;
     addBtn.onclick = () => openModal('client');
@@ -454,7 +466,7 @@ function renderPage(name) {
     case 'clients':   renderClients();   break;
     case 'tasks':     renderTasks();     break;
     case 'reports':   renderReports();   break;
-    case 'pricing':   /* static UI for now */ break;
+    case 'pricing':   renderPricingTable(); break;
   }
 }
 
@@ -1089,6 +1101,11 @@ function openModal(type) {
     overlay.classList.add('open');
     const firstInput = content.querySelector('input');
     if (firstInput) setTimeout(() => firstInput.focus(), 100);
+  } else if (type === 'pricing') {
+    content.innerHTML = buildPricingModalHtml();
+    overlay.classList.add('open');
+    const firstInput = content.querySelector('input');
+    if (firstInput) setTimeout(() => firstInput.focus(), 100);
   }
 }
 
@@ -1217,6 +1234,32 @@ function buildTaskModalHtml() {
       <button class="btn-cancel" onclick="closeModal()">Cancel</button>
       <button class="btn-submit" id="task-submit-btn" onclick="submitTask()">
         Create Task
+      </button>
+    </div>`;
+}
+
+function buildPricingModalHtml() {
+  return `
+    <h2 class="modal-title">Add New Pricing</h2>
+    <div class="form-group">
+      <label class="form-label">Task Name</label>
+      <input id="pf-name" class="form-input" type="text" placeholder="e.g. Website Development">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Total Billed (₹)</label>
+      <input id="pf-amount" class="form-input" type="number" min="0" step="0.01" placeholder="0.00" value="0.00">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Status</label>
+      <select id="pf-status" class="form-select">
+        <option value="Active">Active</option>
+        <option value="Inactive">Inactive</option>
+      </select>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-submit" id="pricing-submit-btn" onclick="submitPricing()">
+        Add Pricing
       </button>
     </div>`;
 }
@@ -1464,6 +1507,72 @@ async function submitTask() {
       'error'
     );
   });
+}
+
+async function submitPricing() {
+  const taskName = document.getElementById('pf-name')?.value?.trim();
+  const totalBilled = parseFloat(document.getElementById('pf-amount')?.value) || 0;
+  const status = document.getElementById('pf-status')?.value;
+
+  if (!taskName) { showToast('Validation Error', 'Task name is required.', 'error'); return; }
+
+  const btn = document.getElementById('pricing-submit-btn');
+  btn.disabled = true;
+  btn.innerHTML = `<span class="spinner"></span> Adding...`;
+
+  const tempId = generateId('PRC');
+  const now = new Date().toISOString();
+  
+  const newPricing = {
+    ID: tempId,
+    TaskName: taskName,
+    TotalBilled: totalBilled,
+    Status: status,
+    CreatedAt: now,
+  };
+
+  // Optimistic update
+  state.pricing.push(newPricing);
+  closeModal();
+  renderPricingTable();
+  showToast('Pricing Added ✓', `"${taskName}" added. Saving to Google Sheet…`, 'success');
+
+  // Background save
+  apiCall('POST', {
+    action: 'addPricing',
+    pricing: newPricing
+  }).then(res => {
+    if (res?.id && res.id !== tempId) {
+      const idx = state.pricing.findIndex(p => p.ID === tempId);
+      if (idx !== -1) state.pricing[idx].ID = res.id;
+    }
+  }).catch(err => {
+    console.warn('[FreelanceOS] Sheet save failed:', err.message);
+    showToast('Sync Warning', 'Pricing is shown but could not be saved to Google Sheet.', 'error');
+  });
+}
+
+function renderPricingTable() {
+  const tbody = document.getElementById('pricing-tbody');
+  if (!tbody) return;
+
+  const pricing = state.pricing || [];
+  
+  if (!pricing.length) {
+    tbody.innerHTML = `<tr><td colspan="4"><div class="empty-state">No pricing packages found.</div></td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = pricing.map((p, i) => {
+    const statusClass = p.Status === 'Active' ? 'badge-green' : 'badge-gray';
+    return `
+    <tr>
+      <td class="sno-cell">${String(i+1).padStart(2, '0')}</td>
+      <td class="fw-500">${escHtml(p.TaskName)}</td>
+      <td class="fw-500">${formatCurrency(p.TotalBilled)}</td>
+      <td><span class="badge ${statusClass}">${escHtml(p.Status)}</span></td>
+    </tr>`;
+  }).join('');
 }
 
 // ============================================================

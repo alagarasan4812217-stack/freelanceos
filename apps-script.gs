@@ -16,6 +16,7 @@ const SPREADSHEET_ID = '1BXXsteEiAmM3yNRSBa9c9-zfYjH6Fr0KQ2bEn9jHod4'; // From y
 const DRIVE_FOLDER_ID = '1EiGnQVkiGIAmWrnJx_l-M8jwFVEULMgp'; // Optional: for logo uploads
 const CLIENTS_SHEET = 'Clients';
 const TASKS_SHEET = 'Tasks';
+const PRICING_SHEET = 'Pricing';
 
 // ---- MAIN HANDLERS ----
 function doGet(e) {
@@ -29,7 +30,7 @@ function doGet(e) {
     } else if (action === 'getTasks') {
       result = getTasks();
     } else if (action === 'getAllData') {
-      result = { clients: getClients(), tasks: getTasks() };
+      result = { clients: getClients(), tasks: getTasks(), pricing: getPricing() };
     } else if (action === 'testSheets') {
       // Debug endpoint: verify spreadsheet access without reading data
       try {
@@ -93,6 +94,9 @@ function doPost(e) {
       case 'addTask':
         result = addTask(data.task);
         break;
+      case 'addPricing':
+        result = addPricing(data.pricing);
+        break;
       case 'deleteTask':
         result = deleteTask(data.taskId);
         break;
@@ -138,6 +142,8 @@ function getSheet(name) {
       sheet.appendRow(['ID', 'Name', 'Email', 'Location', 'Type', 'Status', 'JoinedDate', 'TotalBilled', 'ActiveTasks', 'LogoUrl', 'CreatedAt']);
     } else if (name === TASKS_SHEET) {
       sheet.appendRow(['ID', 'ClientId', 'ClientName', 'TaskName', 'TaskType', 'Amount', 'Status', 'PaymentStatus', 'AssignedDate', 'DueDate', 'CreatedAt']);
+    } else if (name === PRICING_SHEET) {
+      sheet.appendRow(['ID', 'TaskName', 'TotalBilled', 'Status', 'CreatedAt']);
     }
   }
   return sheet;
@@ -156,6 +162,28 @@ function sheetToObjects(sheet) {
 
 function generateId(prefix) {
   return prefix + '_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
+}
+
+// ---- PRICING OPERATIONS ----
+function getPricing() {
+  const sheet = getSheet(PRICING_SHEET);
+  return sheetToObjects(sheet);
+}
+
+function addPricing(pricing) {
+  if (!SPREADSHEET_ID || SPREADSHEET_ID === 'YOUR_SPREADSHEET_ID_HERE') {
+    throw new Error('SPREADSHEET_ID is not configured in Apps Script.');
+  }
+  const sheet = getSheet(PRICING_SHEET);
+  const id = generateId('PRC');
+  const now = new Date().toISOString();
+  
+  var taskName    = (pricing.taskName    || pricing.TaskName    || '').toString();
+  var totalBilled = parseFloat(pricing.totalBilled || pricing.TotalBilled || 0);
+  var status      = (pricing.status      || pricing.Status      || 'Active').toString();
+
+  sheet.appendRow([id, taskName, totalBilled, status, now]);
+  return { success: true, id: id };
 }
 
 // ---- CLIENT OPERATIONS ----
